@@ -169,6 +169,11 @@ const TopUp = () => {
       }
     }
 
+    if (topUpCount < minTopUp) {
+      showError(t('充值数量不能小于') + minTopUp);
+      return;
+    }
+
     setPayWay(payment);
     setPaymentLoading(true);
     try {
@@ -191,6 +196,11 @@ const TopUp = () => {
   };
 
   const onlineTopUp = async () => {
+    if (topUpCount < minTopUp) {
+      showError(t('充值数量不能小于') + minTopUp);
+      return;
+    }
+
     if (payWay === 'stripe') {
       // Stripe 支付处理
       if (amount === 0) {

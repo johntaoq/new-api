@@ -22,11 +22,16 @@ import { useTranslation } from 'react-i18next';
 import {
   API,
   downloadTextAsFile,
+  getCurrencyConfig,
   showError,
   showSuccess,
   renderQuota,
   renderQuotaWithPrompt,
 } from '../../../../helpers';
+import {
+  displayAmountToQuota,
+  getQuotaPerUnit,
+} from '../../../../helpers/quota';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import {
   Button,
@@ -51,16 +56,54 @@ import {
 
 const { Text, Title } = Typography;
 
+const getRedemptionPresetOptions = () => {
+  const { type } = getCurrencyConfig();
+
+  if (type === 'TOKENS') {
+    return [100000, 500000, 1000000, 5000000, 10000000].map((quota) => ({
+      value: quota,
+      label: renderQuota(quota),
+    }));
+  }
+
+  return [1, 10, 50, 100, 500, 1000]
+    .map((amount) => {
+      const quota = displayAmountToQuota(amount);
+      if (!Number.isFinite(quota) || quota <= 0) {
+        return null;
+      }
+      return {
+        value: quota,
+        label: renderQuota(quota),
+      };
+    })
+    .filter(Boolean);
+};
+
+const getDefaultQuotaValue = () => {
+  const { type } = getCurrencyConfig();
+
+  if (type === 'TOKENS') {
+    return Math.max(1, Math.round(getQuotaPerUnit()));
+  }
+
+  const defaultQuota = displayAmountToQuota(1);
+  return Number.isFinite(defaultQuota) && defaultQuota > 0
+    ? defaultQuota
+    : Math.max(1, Math.round(getQuotaPerUnit()));
+};
+
 const EditRedemptionModal = (props) => {
   const { t } = useTranslation();
   const isEdit = props.editingRedemption.id !== undefined;
   const [loading, setLoading] = useState(isEdit);
   const isMobile = useIsMobile();
   const formApiRef = useRef(null);
+  const quotaPresetOptions = getRedemptionPresetOptions();
 
   const getInitValues = () => ({
     name: '',
-    quota: 100000,
+    quota: getDefaultQuotaValue(),
     count: 1,
     expired_time: null,
   });
@@ -306,14 +349,7 @@ const EditRedemptionModal = (props) => {
                         extraText={renderQuotaWithPrompt(
                           Number(values.quota) || 0,
                         )}
-                        data={[
-                          { value: 500000, label: '1$' },
-                          { value: 5000000, label: '10$' },
-                          { value: 25000000, label: '50$' },
-                          { value: 50000000, label: '100$' },
-                          { value: 250000000, label: '500$' },
-                          { value: 500000000, label: '1000$' },
-                        ]}
+                        data={quotaPresetOptions}
                         showClear
                       />
                     </Col>
