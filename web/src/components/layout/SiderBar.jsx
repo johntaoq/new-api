@@ -25,7 +25,11 @@ import { ChevronLeft } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import { useSidebar } from '../../hooks/common/useSidebar';
 import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime';
-import { isAdmin, isRoot, showError } from '../../helpers';
+import {
+  hasAnyPermission,
+  hasPermission,
+  showError,
+} from '../../helpers';
 import SkeletonWrapper from './components/SkeletonWrapper';
 
 import { Nav, Divider, Button } from '@douyinfe/semi-ui';
@@ -33,6 +37,7 @@ import { Nav, Divider, Button } from '@douyinfe/semi-ui';
 const routerMap = {
   home: '/',
   channel: '/console/channel',
+  billing: '/console/billing',
   token: '/console/token',
   redemption: '/console/redemption',
   topup: '/console/topup',
@@ -67,6 +72,17 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const [openedKeys, setOpenedKeys] = useState([]);
   const location = useLocation();
   const [routerMapState, setRouterMapState] = useState(routerMap);
+  const canViewFinance = hasAnyPermission(
+    'finance.view',
+    'finance.write',
+    'finance.audit.view',
+    'system.manage',
+  );
+  const canWriteFinance = hasAnyPermission('finance.write', 'system.manage');
+  const canManageOps = hasAnyPermission('ops.manage', 'system.manage');
+  const canManageSystem = hasPermission('system.manage');
+  const showAdminSection =
+    canViewFinance || canWriteFinance || canManageOps || canManageSystem;
 
   const workspaceItems = useMemo(() => {
     const items = [
@@ -148,46 +164,52 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const adminItems = useMemo(() => {
     const items = [
       {
+        text: t('账务中心'),
+        itemKey: 'billing',
+        to: '/billing',
+        className: canViewFinance ? '' : 'tableHiddle',
+      },
+      {
         text: t('渠道管理'),
         itemKey: 'channel',
         to: '/channel',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps ? '' : 'tableHiddle',
       },
       {
         text: t('订阅管理'),
         itemKey: 'subscription',
         to: '/subscription',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps ? '' : 'tableHiddle',
       },
       {
         text: t('模型管理'),
         itemKey: 'models',
         to: '/console/models',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps ? '' : 'tableHiddle',
       },
       {
         text: t('模型部署'),
         itemKey: 'deployment',
         to: '/deployment',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps ? '' : 'tableHiddle',
       },
       {
         text: t('兑换码管理'),
         itemKey: 'redemption',
         to: '/redemption',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canWriteFinance ? '' : 'tableHiddle',
       },
       {
         text: t('用户管理'),
         itemKey: 'user',
         to: '/user',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps || canWriteFinance ? '' : 'tableHiddle',
       },
       {
         text: t('系统设置'),
         itemKey: 'setting',
         to: '/setting',
-        className: isRoot() ? '' : 'tableHiddle',
+        className: canManageSystem ? '' : 'tableHiddle',
       },
     ];
 
@@ -198,7 +220,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     });
 
     return filteredItems;
-  }, [isAdmin(), isRoot(), t, isModuleVisible]);
+  }, [canManageOps, canManageSystem, canViewFinance, canWriteFinance, t, isModuleVisible]);
 
   const chatMenuItems = useMemo(() => {
     const items = [
@@ -398,7 +420,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         type='sidebar'
         className=''
         collapsed={collapsed}
-        showAdmin={isAdmin()}
+          showAdmin={showAdminSection}
       >
         <Nav
           className='sidebar-nav'
@@ -476,7 +498,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
           )}
 
           {/* 管理员区域 - 只在管理员时显示且配置允许时显示 */}
-          {isAdmin() && hasSectionVisibleModules('admin') && (
+          {showAdminSection && hasSectionVisibleModules('admin') && (
             <>
               <Divider className='sidebar-divider' />
               <div>

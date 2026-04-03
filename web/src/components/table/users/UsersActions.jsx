@@ -19,12 +19,18 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React from 'react';
 import { Button } from '@douyinfe/semi-ui';
+import { hasAnyPermission } from '../../../helpers';
 
 const UsersActions = ({ setShowAddUser, t }) => {
+  const canManageOps = hasAnyPermission('ops.manage', 'system.manage');
   // Add new user
   const handleAddUser = () => {
     setShowAddUser(true);
   };
+
+  if (!canManageOps) {
+    return null;
+  }
 
   return (
     <div className='flex gap-2 w-full md:w-auto order-2 md:order-1'>

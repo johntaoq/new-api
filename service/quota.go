@@ -233,6 +233,16 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	ledgerParams := model.BuildRelayChannelCostLedgerParams(
+		relayInfo,
+		model.ChannelCostEntryTypeConsume,
+		usage.InputTokens,
+		usage.OutputTokens,
+		quota,
+		common.GetTimestamp(),
+	)
+	ledgerParams.CacheTokens = usageCacheTokenTotal(usage)
+	_ = model.RecordChannelCostLedger(ledgerParams)
 }
 
 func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData) int {
@@ -314,8 +324,9 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
 	}
 
-	if err := SettleBilling(ctx, relayInfo, quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	settleErr := SettleBilling(ctx, relayInfo, quota)
+	if settleErr != nil {
+		logger.LogError(ctx, "error settling billing: "+settleErr.Error())
 	}
 
 	logModel := relayInfo.OriginModelName
@@ -338,6 +349,18 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	if settleErr == nil {
+		ledgerParams := model.BuildRelayChannelCostLedgerParams(
+			relayInfo,
+			model.ChannelCostEntryTypeConsume,
+			usage.PromptTokens,
+			usage.CompletionTokens,
+			quota,
+			common.GetTimestamp(),
+		)
+		ledgerParams.CacheTokens = usageCacheTokenTotal(usage)
+		_ = model.RecordChannelCostLedger(ledgerParams)
+	}
 }
 
 func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
@@ -381,9 +404,27 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 	} else {
 		// Wallet
 		if quota > 0 {
-			err = model.DecreaseUserQuota(relayInfo.UserId, quota)
+			allocations, consumeErr := model.ConsumeUserQuotaWithAllocation(relayInfo.UserId, quota)
+			if consumeErr == nil {
+				relayInfo.QuotaFundingAllocations = allocations
+				relayInfo.PaidQuotaConsumed, relayInfo.GiftQuotaConsumed, _ = model.SumQuotaFundingAllocations(allocations)
+			}
+			err = consumeErr
 		} else {
-			err = model.IncreaseUserQuota(relayInfo.UserId, -quota, false)
+			if len(relayInfo.QuotaFundingAllocations) > 0 {
+				remaining, refunded, refundErr := model.RefundUserQuotaAllocations(relayInfo.UserId, relayInfo.QuotaFundingAllocations, -quota)
+				if refundErr == nil {
+					relayInfo.QuotaFundingAllocations = remaining
+					relayInfo.PaidQuotaConsumed, relayInfo.GiftQuotaConsumed, _ = model.SumQuotaFundingAllocations(refunded)
+				}
+				err = refundErr
+			} else {
+				refunded, refundErr := model.RefundUserQuotaLegacy(relayInfo.UserId, -quota)
+				if refundErr == nil {
+					relayInfo.PaidQuotaConsumed, relayInfo.GiftQuotaConsumed, _ = model.SumQuotaFundingAllocations(refunded)
+				}
+				err = refundErr
+			}
 		}
 		if err != nil {
 			return err

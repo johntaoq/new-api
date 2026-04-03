@@ -32,17 +32,41 @@ const HTMLToastContent = ({ htmlContent }) => {
   return <div dangerouslySetInnerHTML={{ __html: htmlContent }} />;
 };
 export default HTMLToastContent;
+export function getUserFromLocalStorage() {
+  const raw = localStorage.getItem('user');
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function getPermissionItems() {
+  const user = getUserFromLocalStorage();
+  if (!user || !user.permissions || typeof user.permissions !== 'object') {
+    return {};
+  }
+  return user.permissions.items || {};
+}
+
+export function hasPermission(permission) {
+  return getPermissionItems()?.[permission] === true;
+}
+
+export function hasAnyPermission(...permissions) {
+  return permissions.some((permission) => hasPermission(permission));
+}
+
 export function isAdmin() {
-  let user = localStorage.getItem('user');
+  const user = getUserFromLocalStorage();
   if (!user) return false;
-  user = JSON.parse(user);
   return user.role >= 10;
 }
 
 export function isRoot() {
-  let user = localStorage.getItem('user');
+  const user = getUserFromLocalStorage();
   if (!user) return false;
-  user = JSON.parse(user);
   return user.role >= 100;
 }
 

@@ -82,6 +82,7 @@ func createRootAccountIfNeed() error {
 			DisplayName: "Root User",
 			AccessToken: nil,
 			Quota:       100000000,
+			PaidQuota:   100000000,
 		}
 		DB.Create(&rootUser)
 	}
@@ -275,6 +276,15 @@ func migrateDB() error {
 		&TwoFA{},
 		&TwoFABackupCode{},
 		&Checkin{},
+		&UserQuotaFunding{},
+		&UserBalanceLedger{},
+		&FinancialAuditLog{},
+		&ChannelCostLedger{},
+		&ChannelCostAllocation{},
+		&CustomerMonthlyStatement{},
+		&CustomerMonthlyStatementItem{},
+		&ChannelMonthlyStatement{},
+		&ChannelMonthlyStatementItem{},
 		&SubscriptionOrder{},
 		&UserSubscription{},
 		&SubscriptionPreConsumeRecord{},
@@ -292,6 +302,9 @@ func migrateDB() error {
 		if err := DB.AutoMigrate(&SubscriptionPlan{}); err != nil {
 			return err
 		}
+	}
+	if err := BackfillLegacyQuotaFunding(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -323,6 +336,14 @@ func migrateDBFast() error {
 		{&TwoFA{}, "TwoFA"},
 		{&TwoFABackupCode{}, "TwoFABackupCode"},
 		{&Checkin{}, "Checkin"},
+		{&UserQuotaFunding{}, "UserQuotaFunding"},
+		{&UserBalanceLedger{}, "UserBalanceLedger"},
+		{&ChannelCostLedger{}, "ChannelCostLedger"},
+		{&ChannelCostAllocation{}, "ChannelCostAllocation"},
+		{&CustomerMonthlyStatement{}, "CustomerMonthlyStatement"},
+		{&CustomerMonthlyStatementItem{}, "CustomerMonthlyStatementItem"},
+		{&ChannelMonthlyStatement{}, "ChannelMonthlyStatement"},
+		{&ChannelMonthlyStatementItem{}, "ChannelMonthlyStatementItem"},
 		{&SubscriptionOrder{}, "SubscriptionOrder"},
 		{&UserSubscription{}, "UserSubscription"},
 		{&SubscriptionPreConsumeRecord{}, "SubscriptionPreConsumeRecord"},
@@ -360,6 +381,9 @@ func migrateDBFast() error {
 		if err := DB.AutoMigrate(&SubscriptionPlan{}); err != nil {
 			return err
 		}
+	}
+	if err := BackfillLegacyQuotaFunding(); err != nil {
+		return err
 	}
 	common.SysLog("database migrated")
 	return nil

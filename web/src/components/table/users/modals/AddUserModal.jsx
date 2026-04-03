@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useState, useRef } from 'react';
-import { API, showError, showSuccess } from '../../../../helpers';
+import { API, isRoot, showError, showSuccess } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import {
   Button,
@@ -49,6 +49,7 @@ const AddUserModal = (props) => {
     display_name: '',
     password: '',
     remark: '',
+    staff_role: '',
   });
 
   const submit = async (values) => {
@@ -173,6 +174,20 @@ const AddUserModal = (props) => {
                       showClear
                     />
                   </Col>
+                  {isRoot() ? (
+                    <Col span={24}>
+                      <Form.Select
+                        field='staff_role'
+                        label={t('后台职责')}
+                        optionList={[
+                          { label: t('普通用户'), value: '' },
+                          { label: t('运营管理员'), value: 'admin' },
+                          { label: t('财务'), value: 'finance' },
+                          { label: t('审计'), value: 'audit' },
+                        ]}
+                      />
+                    </Col>
+                  ) : null}
                 </Row>
               </Card>
             </div>

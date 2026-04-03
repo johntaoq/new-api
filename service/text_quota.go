@@ -327,8 +327,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
 
-	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	settleErr := SettleBilling(ctx, relayInfo, summary.Quota)
+	if settleErr != nil {
+		logger.LogError(ctx, "error settling billing: "+settleErr.Error())
 	}
 
 	logModel := summary.ModelName
@@ -427,4 +428,16 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	if settleErr == nil {
+		ledgerParams := model.BuildRelayChannelCostLedgerParams(
+			relayInfo,
+			model.ChannelCostEntryTypeConsume,
+			summary.PromptTokens,
+			summary.CompletionTokens,
+			summary.Quota,
+			common.GetTimestamp(),
+		)
+		ledgerParams.CacheTokens = usageCacheTokenTotal(usage)
+		_ = model.RecordChannelCostLedger(ledgerParams)
+	}
 }

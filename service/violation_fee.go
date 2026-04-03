@@ -159,6 +159,14 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		Group:          relayInfo.UsingGroup,
 		Other:          other,
 	})
+	_ = model.RecordChannelCostLedger(model.BuildRelayChannelCostLedgerParams(
+		relayInfo,
+		model.ChannelCostEntryTypeConsume,
+		0,
+		0,
+		feeQuota,
+		common.GetTimestamp(),
+	))
 
 	return true
 }

@@ -1,8 +1,12 @@
 package controller
 
 import (
+	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
@@ -22,7 +26,6 @@ func GetAllRedemptions(c *gin.Context) {
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(redemptions)
 	common.ApiSuccess(c, pageInfo)
-	return
 }
 
 func SearchRedemptions(c *gin.Context) {
@@ -36,7 +39,6 @@ func SearchRedemptions(c *gin.Context) {
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(redemptions)
 	common.ApiSuccess(c, pageInfo)
-	return
 }
 
 func GetRedemption(c *gin.Context) {
@@ -55,18 +57,16 @@ func GetRedemption(c *gin.Context) {
 		"message": "",
 		"data":    redemption,
 	})
-	return
 }
 
 func AddRedemption(c *gin.Context) {
 	redemption := model.Redemption{}
-	err := c.ShouldBindJSON(&redemption)
-	if err != nil {
+	if err := common.DecodeJson(c.Request.Body, &redemption); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if utf8.RuneCountInString(redemption.Name) == 0 || utf8.RuneCountInString(redemption.Name) > 20 {
-		common.ApiErrorI18n(c, i18n.MsgRedemptionNameLength)
+	if err := normalizeRedemptionPayload(&redemption); err != nil {
+		common.ApiError(c, err)
 		return
 	}
 	if redemption.Count <= 0 {
@@ -81,40 +81,33 @@ func AddRedemption(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 		return
 	}
-	var keys []string
-	for i := 0; i < redemption.Count; i++ {
-		key := common.GetUUID()
-		cleanRedemption := model.Redemption{
-			UserId:      c.GetInt("id"),
-			Name:        redemption.Name,
-			Key:         key,
-			CreatedTime: common.GetTimestamp(),
-			Quota:       redemption.Quota,
-			ExpiredTime: redemption.ExpiredTime,
-		}
-		err = cleanRedemption.Insert()
-		if err != nil {
-			common.SysError("failed to insert redemption: " + err.Error())
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": i18n.T(c, i18n.MsgRedemptionCreateFailed),
-				"data":    keys,
-			})
-			return
-		}
-		keys = append(keys, key)
+
+	keys, err := model.CreateRedemptionsWithAudit(redemption, redemption.Count, model.FinancialAuditOperator{
+		UserId:           c.GetInt("id"),
+		UsernameSnapshot: c.GetString("username"),
+	})
+	if err != nil {
+		common.SysError("failed to insert redemption: " + err.Error())
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": i18n.T(c, i18n.MsgRedemptionCreateFailed),
+			"data":    []string{},
+		})
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
 		"data":    keys,
 	})
-	return
 }
 
 func DeleteRedemption(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	err := model.DeleteRedemptionById(id)
+	err := model.DeleteRedemptionByIdWithAudit(id, model.FinancialAuditOperator{
+		UserId:           c.GetInt("id"),
+		UsernameSnapshot: c.GetString("username"),
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -123,36 +116,29 @@ func DeleteRedemption(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
-	return
 }
 
 func UpdateRedemption(c *gin.Context) {
 	statusOnly := c.Query("status_only")
 	redemption := model.Redemption{}
-	err := c.ShouldBindJSON(&redemption)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	cleanRedemption, err := model.GetRedemptionById(redemption.Id)
-	if err != nil {
+	if err := common.DecodeJson(c.Request.Body, &redemption); err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	if statusOnly == "" {
+		if err := normalizeRedemptionPayload(&redemption); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 		if valid, msg := validateExpiredTime(c, redemption.ExpiredTime); !valid {
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 			return
 		}
-		// If you add more fields, please also update redemption.Update()
-		cleanRedemption.Name = redemption.Name
-		cleanRedemption.Quota = redemption.Quota
-		cleanRedemption.ExpiredTime = redemption.ExpiredTime
 	}
-	if statusOnly != "" {
-		cleanRedemption.Status = redemption.Status
-	}
-	err = cleanRedemption.Update()
+	cleanRedemption, err := model.UpdateRedemptionWithAudit(redemption, statusOnly != "", model.FinancialAuditOperator{
+		UserId:           c.GetInt("id"),
+		UsernameSnapshot: c.GetString("username"),
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -162,11 +148,13 @@ func UpdateRedemption(c *gin.Context) {
 		"message": "",
 		"data":    cleanRedemption,
 	})
-	return
 }
 
 func DeleteInvalidRedemption(c *gin.Context) {
-	rows, err := model.DeleteInvalidRedemptions()
+	rows, err := model.DeleteInvalidRedemptionsWithAudit(model.FinancialAuditOperator{
+		UserId:           c.GetInt("id"),
+		UsernameSnapshot: c.GetString("username"),
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -176,7 +164,6 @@ func DeleteInvalidRedemption(c *gin.Context) {
 		"message": "",
 		"data":    rows,
 	})
-	return
 }
 
 func validateExpiredTime(c *gin.Context, expired int64) (bool, string) {
@@ -184,4 +171,74 @@ func validateExpiredTime(c *gin.Context, expired int64) (bool, string) {
 		return false, i18n.T(c, i18n.MsgRedemptionExpireTimeInvalid)
 	}
 	return true, ""
+}
+
+func normalizeRedemptionPayload(redemption *model.Redemption) error {
+	if redemption == nil {
+		return errors.New("invalid redemption payload")
+	}
+
+	redemption.FundingType = strings.TrimSpace(redemption.FundingType)
+	if redemption.FundingType != model.QuotaFundingTypePaid {
+		redemption.FundingType = model.QuotaFundingTypeGift
+	}
+	redemption.Name = strings.TrimSpace(redemption.Name)
+	redemption.Remark = strings.TrimSpace(redemption.Remark)
+
+	if redemption.AmountUSD <= 0 && redemption.Quota > 0 {
+		if common.QuotaPerUnit <= 0 {
+			return errors.New("quota_per_unit is invalid")
+		}
+		redemption.AmountUSD = float64(redemption.Quota) / common.QuotaPerUnit
+	}
+	if redemption.AmountUSD <= 0 {
+		return errors.New("amount_usd must be greater than 0")
+	}
+	if redemption.Quota <= 0 {
+		if common.QuotaPerUnit <= 0 {
+			return errors.New("quota_per_unit is invalid")
+		}
+		redemption.Quota = int(math.Round(redemption.AmountUSD * common.QuotaPerUnit))
+	}
+	if redemption.Quota <= 0 {
+		return errors.New("quota must be greater than 0")
+	}
+
+	redemption.AmountUSD = modelAmountRound(redemption.AmountUSD)
+	redemption.QuotaPerUnitSnapshot = common.QuotaPerUnit
+
+	if redemption.FundingType == model.QuotaFundingTypePaid {
+		if redemption.RecognizedRevenueUSD <= 0 {
+			redemption.RecognizedRevenueUSD = redemption.AmountUSD
+		}
+		redemption.RecognizedRevenueUSD = modelAmountRound(redemption.RecognizedRevenueUSD)
+	} else {
+		redemption.RecognizedRevenueUSD = 0
+		if redemption.Remark == "" {
+			return errors.New("remark is required for free redemption codes")
+		}
+	}
+
+	if utf8.RuneCountInString(redemption.Remark) > 255 {
+		return errors.New("remark must be 255 characters or fewer")
+	}
+	if redemption.Name == "" {
+		redemption.Name = buildDefaultRedemptionName(redemption.FundingType, redemption.AmountUSD)
+	}
+	if utf8.RuneCountInString(redemption.Name) == 0 || utf8.RuneCountInString(redemption.Name) > 20 {
+		return errors.New("name must be between 1 and 20 characters")
+	}
+	return nil
+}
+
+func buildDefaultRedemptionName(fundingType string, amountUSD float64) string {
+	label := "Free"
+	if fundingType == model.QuotaFundingTypePaid {
+		label = "Paid"
+	}
+	return fmt.Sprintf("%s $%s", label, strconv.FormatFloat(amountUSD, 'f', 2, 64))
+}
+
+func modelAmountRound(value float64) float64 {
+	return math.Round(value*1_000_000) / 1_000_000
 }

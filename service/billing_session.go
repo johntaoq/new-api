@@ -72,6 +72,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	if s.funding.Source() == BillingSourceSubscription {
 		s.relayInfo.SubscriptionPostDelta += int64(delta)
 	}
+	s.syncRelayInfo()
 	s.settled = true
 	return tokenErr
 }
@@ -244,6 +245,16 @@ func (s *BillingSession) syncRelayInfo() {
 	} else {
 		info.SubscriptionId = 0
 		info.SubscriptionPreConsumed = 0
+	}
+
+	info.PaidQuotaConsumed = 0
+	info.GiftQuotaConsumed = 0
+	info.QuotaFundingAllocations = nil
+	if wallet, ok := s.funding.(*WalletFunding); ok {
+		paidQuota, giftQuota, _ := model.SumQuotaFundingAllocations(wallet.allocations)
+		info.PaidQuotaConsumed = paidQuota
+		info.GiftQuotaConsumed = giftQuota
+		info.QuotaFundingAllocations = append(info.QuotaFundingAllocations, wallet.allocations...)
 	}
 }
 

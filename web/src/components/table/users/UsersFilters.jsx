@@ -29,6 +29,7 @@ const UsersFilters = ({
   activePage,
   pageSize,
   groupOptions,
+  canManageOps,
   loading,
   searching,
   t,
@@ -65,29 +66,30 @@ const UsersFilters = ({
           <Form.Input
             field='searchKeyword'
             prefix={<IconSearch />}
-            placeholder={t('支持搜索用户的 ID、用户名、显示名称和邮箱地址')}
+            placeholder={t('鏀寔鎼滅储鐢ㄦ埛鐨?ID銆佺敤鎴峰悕銆佹樉绀哄悕绉板拰閭鍦板潃')}
             showClear
             pure
             size='small'
           />
         </div>
-        <div className='w-full md:w-48'>
-          <Form.Select
-            field='searchGroup'
-            placeholder={t('选择分组')}
-            optionList={groupOptions}
-            onChange={(value) => {
-              // Group change triggers automatic search
-              setTimeout(() => {
-                searchUsers(1, pageSize);
-              }, 100);
-            }}
-            className='w-full'
-            showClear
-            pure
-            size='small'
-          />
-        </div>
+        {canManageOps ? (
+          <div className='w-full md:w-48'>
+            <Form.Select
+              field='searchGroup'
+              placeholder={t('閫夋嫨鍒嗙粍')}
+              optionList={groupOptions}
+              onChange={() => {
+                setTimeout(() => {
+                  searchUsers(1, pageSize);
+                }, 100);
+              }}
+              className='w-full'
+              showClear
+              pure
+              size='small'
+            />
+          </div>
+        ) : null}
         <div className='flex gap-2 w-full md:w-auto'>
           <Button
             type='tertiary'
@@ -96,7 +98,7 @@ const UsersFilters = ({
             className='flex-1 md:flex-initial md:w-auto'
             size='small'
           >
-            {t('查询')}
+            {t('鏌ヨ')}
           </Button>
           <Button
             type='tertiary'
@@ -104,7 +106,7 @@ const UsersFilters = ({
             className='flex-1 md:flex-initial md:w-auto'
             size='small'
           >
-            {t('重置')}
+            {t('閲嶇疆')}
           </Button>
         </div>
       </div>

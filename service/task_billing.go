@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -56,6 +57,14 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		Group:     info.UsingGroup,
 		Other:     other,
 	})
+	_ = model.RecordChannelCostLedger(model.BuildRelayChannelCostLedgerParams(
+		info,
+		model.ChannelCostEntryTypeConsume,
+		0,
+		0,
+		info.PriceData.Quota,
+		common.GetTimestamp(),
+	))
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)
 }
@@ -81,14 +90,24 @@ func taskIsSubscription(task *model.Task) bool {
 }
 
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
-func taskAdjustFunding(task *model.Task, delta int) error {
+func taskAdjustFunding(task *model.Task, delta int) ([]types.QuotaFundingAllocation, error) {
 	if taskIsSubscription(task) {
-		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
+		return nil, model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(task.UserId, delta)
+		allocations, err := model.ConsumeUserQuotaWithAllocation(task.UserId, delta)
+		if err != nil {
+			return nil, err
+		}
+		task.PrivateData.QuotaAllocations = append(task.PrivateData.QuotaAllocations, allocations...)
+		return allocations, model.UpdateTaskQuotaAllocationState(task)
 	}
-	return model.IncreaseUserQuota(task.UserId, -delta, false)
+	remaining, refunded, err := model.RefundUserQuotaAllocations(task.UserId, task.PrivateData.QuotaAllocations, -delta)
+	if err != nil {
+		return nil, err
+	}
+	task.PrivateData.QuotaAllocations = remaining
+	return refunded, model.UpdateTaskQuotaAllocationState(task)
 }
 
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
@@ -149,7 +168,8 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 	}
 
 	// 1. 退还资金来源（钱包或订阅）
-	if err := taskAdjustFunding(task, -quota); err != nil {
+	refundedAllocations, err := taskAdjustFunding(task, -quota)
+	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
 		return
 	}
@@ -171,6 +191,20 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 		TokenId:   task.PrivateData.TokenId,
 		Group:     task.Group,
 		Other:     other,
+	})
+	_ = model.RecordChannelCostLedger(model.RecordChannelCostLedgerParams{
+		RequestId:         task.TaskID,
+		UserId:            task.UserId,
+		BillingSource:     task.PrivateData.BillingSource,
+		ChannelId:         task.ChannelId,
+		OriginModelName:   taskModelName(task),
+		UpstreamModelName: task.Properties.UpstreamModelName,
+		EntryType:         model.ChannelCostEntryTypeRefund,
+		ActualQuota:       quota,
+		EstimatedCostUSD:  estimateTaskQuotaCostUSD(task, quota),
+		CostBasis:         "task_refund",
+		OccurredAt:        common.GetTimestamp(),
+		Allocations:       refundedAllocations,
 	})
 }
 
@@ -199,7 +233,8 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	))
 
 	// 调整资金来源
-	if err := taskAdjustFunding(task, quotaDelta); err != nil {
+	deltaAllocations, err := taskAdjustFunding(task, quotaDelta)
+	if err != nil {
 		logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
 		return
 	}
@@ -208,6 +243,9 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	taskAdjustTokenQuota(ctx, task, quotaDelta)
 
 	task.Quota = actualQuota
+	if err := model.UpdateTaskQuotaAllocationState(task); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("persist task billing state failed task %s: %s", task.TaskID, err.Error()))
+	}
 
 	var logType int
 	var logQuota int
@@ -235,6 +273,30 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		TokenId:   task.PrivateData.TokenId,
 		Group:     task.Group,
 		Other:     other,
+	})
+	_ = model.RecordChannelCostLedger(model.RecordChannelCostLedgerParams{
+		RequestId:         task.TaskID,
+		UserId:            task.UserId,
+		BillingSource:     task.PrivateData.BillingSource,
+		ChannelId:         task.ChannelId,
+		OriginModelName:   taskModelName(task),
+		UpstreamModelName: task.Properties.UpstreamModelName,
+		EntryType: func() string {
+			if quotaDelta > 0 {
+				return model.ChannelCostEntryTypeConsume
+			}
+			return model.ChannelCostEntryTypeRefund
+		}(),
+		ActualQuota: func() int {
+			if quotaDelta > 0 {
+				return quotaDelta
+			}
+			return -quotaDelta
+		}(),
+		EstimatedCostUSD: estimateTaskQuotaCostUSD(task, logQuota),
+		CostBasis:        reason,
+		OccurredAt:       common.GetTimestamp(),
+		Allocations:      deltaAllocations,
 	})
 }
 

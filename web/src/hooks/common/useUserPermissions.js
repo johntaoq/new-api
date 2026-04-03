@@ -103,6 +103,14 @@ export const useUserPermissions = () => {
     );
   };
 
+  const hasPermission = (permission) => {
+    return permissions?.items?.[permission] === true;
+  };
+
+  const hasAnyPermission = (...permissionKeys) => {
+    return permissionKeys.some((permission) => hasPermission(permission));
+  };
+
   return {
     permissions,
     loading,
@@ -113,6 +121,8 @@ export const useUserPermissions = () => {
     isSidebarModuleAllowed,
     getAllowedSidebarSections,
     getAllowedSidebarModules,
+    hasPermission,
+    hasAnyPermission,
   };
 };
 

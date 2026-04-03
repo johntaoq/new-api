@@ -39,6 +39,7 @@ import InvitationCard from './InvitationCard';
 import TransferModal from './modals/TransferModal';
 import PaymentConfirmModal from './modals/PaymentConfirmModal';
 import TopupHistoryModal from './modals/TopupHistoryModal';
+import MonthlyStatementModal from './modals/MonthlyStatementModal';
 
 const TopUp = () => {
   const { t } = useTranslation();
@@ -93,6 +94,7 @@ const TopUp = () => {
 
   // 账单Modal状态
   const [openHistory, setOpenHistory] = useState(false);
+  const [openMonthlyStatement, setOpenMonthlyStatement] = useState(false);
 
   // 订阅相关
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
@@ -134,6 +136,7 @@ const TopUp = () => {
           const updatedUser = {
             ...userState.user,
             quota: userState.user.quota + data,
+            gift_quota: (userState.user.gift_quota || 0) + data,
           };
           userDispatch({ type: 'login', payload: updatedUser });
         }
@@ -693,6 +696,14 @@ const TopUp = () => {
     setOpenHistory(false);
   };
 
+  const handleOpenMonthlyStatement = () => {
+    setOpenMonthlyStatement(true);
+  };
+
+  const handleMonthlyStatementCancel = () => {
+    setOpenMonthlyStatement(false);
+  };
+
   const handleCreemCancel = () => {
     setCreemOpen(false);
     setSelectedCreemProduct(null);
@@ -758,6 +769,12 @@ const TopUp = () => {
       <TopupHistoryModal
         visible={openHistory}
         onCancel={handleHistoryCancel}
+        t={t}
+      />
+
+      <MonthlyStatementModal
+        visible={openMonthlyStatement}
+        onCancel={handleMonthlyStatementCancel}
         t={t}
       />
 
@@ -829,6 +846,7 @@ const TopUp = () => {
           statusLoading={statusLoading}
           topupInfo={topupInfo}
           onOpenHistory={handleOpenHistory}
+          onOpenMonthlyStatement={handleOpenMonthlyStatement}
           subscriptionLoading={subscriptionLoading}
           subscriptionPlans={subscriptionPlans}
           billingPreference={billingPreference}

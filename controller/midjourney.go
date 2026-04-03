@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
@@ -177,9 +178,9 @@ func UpdateMidjourneyTaskBulk() {
 				if err != nil {
 					logger.LogError(ctx, "UpdateMidjourneyTask task error: "+err.Error())
 				} else if won && shouldReturnQuota {
-					err = model.IncreaseUserQuota(task.UserId, task.Quota, false)
+					refundedAllocations, err := model.RefundUserQuotaLegacy(task.UserId, task.Quota)
 					if err != nil {
-						logger.LogError(ctx, "fail to increase user quota: "+err.Error())
+						logger.LogError(ctx, "fail to refund user quota: "+err.Error())
 					}
 					model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 						UserId:    task.UserId,
@@ -192,6 +193,21 @@ func UpdateMidjourneyTaskBulk() {
 							"task_id": task.MjId,
 							"reason":  "构图失败",
 						},
+					})
+					_ = model.RecordChannelCostLedger(model.RecordChannelCostLedgerParams{
+						RequestId:        task.MjId,
+						UserId:           task.UserId,
+						BillingSource:    "midjourney",
+						ChannelId:        task.ChannelId,
+						ChannelType:      constant.ChannelTypeMidjourney,
+						ChannelName:      midjourneyChannel.Name,
+						OriginModelName:  service.CovertMjpActionToModelName(task.Action),
+						EntryType:        model.ChannelCostEntryTypeRefund,
+						ActualQuota:      task.Quota,
+						EstimatedCostUSD: model.BuildRelayEstimatedCostUSD(nil, task.Quota),
+						CostBasis:        "midjourney_task_refund",
+						OccurredAt:       common.GetTimestamp(),
+						Allocations:      refundedAllocations,
 					})
 				}
 			}

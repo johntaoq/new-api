@@ -19,13 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { API, showError, showSuccess } from '../../helpers';
+import { API, hasAnyPermission, showError, showSuccess } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 
 export const useUsersData = () => {
   const { t } = useTranslation();
   const [compactMode, setCompactMode] = useTableCompactMode('users');
+  const canManageOps = hasAnyPermission('ops.manage', 'system.manage');
 
   // State management
   const [users, setUsers] = useState([]);
@@ -236,6 +237,10 @@ export const useUsersData = () => {
 
   // Fetch groups data
   const fetchGroups = async () => {
+    if (!canManageOps) {
+      setGroupOptions([]);
+      return;
+    }
     try {
       let res = await API.get(`/api/group/`);
       if (res === undefined) {
@@ -271,8 +276,12 @@ export const useUsersData = () => {
       .catch((reason) => {
         showError(reason);
       });
-    fetchGroups().then();
-  }, []);
+    if (canManageOps) {
+      fetchGroups().then();
+    } else {
+      setGroupOptions([]);
+    }
+  }, [canManageOps]);
 
   return {
     // Data state
@@ -300,6 +309,7 @@ export const useUsersData = () => {
     // UI state
     compactMode,
     setCompactMode,
+    canManageOps,
 
     // Actions
     loadUsers,

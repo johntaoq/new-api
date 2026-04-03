@@ -18,18 +18,25 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Tag, Button, Space, Popover, Dropdown } from '@douyinfe/semi-ui';
+import { Button, Dropdown, Popover, Space, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconMore } from '@douyinfe/semi-icons';
 import { renderQuota, timestamp2string } from '../../../helpers';
 import {
+  REDEMPTION_ACTIONS,
   REDEMPTION_STATUS,
   REDEMPTION_STATUS_MAP,
-  REDEMPTION_ACTIONS,
 } from '../../../constants/redemption.constants';
 
-/**
- * Check if redemption code is expired
- */
+const { Text } = Typography;
+
+const formatUSD = (value) => {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) {
+    return '$0.000000';
+  }
+  return `$${amount.toFixed(6)}`;
+};
+
 export const isExpired = (record) => {
   return (
     record.status === REDEMPTION_STATUS.UNUSED &&
@@ -38,16 +45,10 @@ export const isExpired = (record) => {
   );
 };
 
-/**
- * Render timestamp
- */
 const renderTimestamp = (timestamp) => {
   return <>{timestamp2string(timestamp)}</>;
 };
 
-/**
- * Render redemption code status
- */
 const renderStatus = (status, record, t) => {
   if (isExpired(record)) {
     return (
@@ -73,18 +74,67 @@ const renderStatus = (status, record, t) => {
   );
 };
 
-/**
- * Get redemption code table column definitions
- */
+const renderFundingType = (record, t) => {
+  const isPaid = record.funding_type === 'paid';
+  return (
+    <Tag color={isPaid ? 'blue' : 'green'} shape='circle'>
+      {isPaid ? t('付费') : t('免费')}
+    </Tag>
+  );
+};
+
+const renderAmountInfo = (record, t) => {
+  const isPaid = record.funding_type === 'paid';
+  const recognizedRevenue = Number(record.recognized_revenue_usd || 0);
+  return (
+    <Space vertical align='start' spacing='tight'>
+      <Tag color='grey' shape='circle'>
+        {formatUSD(record.amount_usd)}
+      </Tag>
+      {isPaid && recognizedRevenue > 0 && (
+        <Text type='secondary' size='small'>
+          {`${t('确认收入')} ${formatUSD(recognizedRevenue)}`}
+        </Text>
+      )}
+    </Space>
+  );
+};
+
+const renderRemark = (record, t) => {
+  if (!record.remark) {
+    return <Text type='tertiary'>{t('无')}</Text>;
+  }
+  return (
+    <Popover
+      content={
+        <div style={{ maxWidth: 320, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {record.remark}
+        </div>
+      }
+      position='top'
+    >
+      <Text
+        style={{
+          maxWidth: 180,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          display: 'inline-block',
+          cursor: 'pointer',
+        }}
+      >
+        {record.remark}
+      </Text>
+    </Popover>
+  );
+};
+
 export const getRedemptionsColumns = ({
   t,
   manageRedemption,
   copyText,
   setEditingRedemption,
   setShowEdit,
-  refresh,
-  redemptions,
-  activePage,
   showDeleteRedemptionModal,
 }) => {
   return [
@@ -95,6 +145,12 @@ export const getRedemptionsColumns = ({
     {
       title: t('名称'),
       dataIndex: 'name',
+      minWidth: 160,
+    },
+    {
+      title: t('类型'),
+      dataIndex: 'funding_type',
+      render: (text, record) => renderFundingType(record, t),
     },
     {
       title: t('状态'),
@@ -105,17 +161,27 @@ export const getRedemptionsColumns = ({
       },
     },
     {
-      title: t('额度'),
+      title: t('面值 USD'),
+      dataIndex: 'amount_usd',
+      minWidth: 150,
+      render: (text, record) => renderAmountInfo(record, t),
+    },
+    {
+      title: t('平台显示值'),
       dataIndex: 'quota',
       render: (text) => {
         return (
-          <div>
-            <Tag color='grey' shape='circle'>
-              {renderQuota(parseInt(text))}
-            </Tag>
-          </div>
+          <Tag color='light-blue' shape='circle'>
+            {renderQuota(Number(text) || 0)}
+          </Tag>
         );
       },
+    },
+    {
+      title: t('备注'),
+      dataIndex: 'remark',
+      minWidth: 180,
+      render: (text, record) => renderRemark(record, t),
     },
     {
       title: t('创建时间'),
@@ -132,10 +198,10 @@ export const getRedemptionsColumns = ({
       },
     },
     {
-      title: t('兑换人ID'),
+      title: t('兑换用户 ID'),
       dataIndex: 'used_user_id',
       render: (text) => {
-        return <div>{text === 0 ? t('无') : text}</div>;
+        return <div>{text === 0 ? t('未使用') : text}</div>;
       },
     },
     {
@@ -144,7 +210,6 @@ export const getRedemptionsColumns = ({
       fixed: 'right',
       width: 205,
       render: (text, record) => {
-        // Create dropdown menu items for more operations
         const moreMenuItems = [
           {
             node: 'item',

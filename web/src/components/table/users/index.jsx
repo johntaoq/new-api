@@ -53,6 +53,7 @@ const UsersPage = () => {
     groupOptions,
     loading,
     searching,
+    canManageOps,
 
     // Description state
     compactMode,
@@ -98,6 +99,7 @@ const UsersPage = () => {
               activePage={activePage}
               pageSize={pageSize}
               groupOptions={groupOptions}
+              canManageOps={canManageOps}
               loading={loading}
               searching={searching}
               t={t}

@@ -12,15 +12,15 @@ import (
 )
 
 type TopUp struct {
-	Id               int     `json:"id"`
-	UserId           int     `json:"user_id" gorm:"index"`
-	Amount           int64   `json:"amount"`
-	Money            float64 `json:"money"`
-	TradeNo          string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod    string  `json:"payment_method" gorm:"type:varchar(50)"`
-	CreateTime       int64   `json:"create_time"`
-	CompleteTime     int64   `json:"complete_time"`
-	Status           string  `json:"status"`
+	Id            int     `json:"id"`
+	UserId        int     `json:"user_id" gorm:"index"`
+	Amount        int64   `json:"amount"`
+	Money         float64 `json:"money"`
+	TradeNo       string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	PaymentMethod string  `json:"payment_method" gorm:"type:varchar(50)"`
+	CreateTime    int64   `json:"create_time"`
+	CompleteTime  int64   `json:"complete_time"`
+	Status        string  `json:"status"`
 }
 
 func (topUp *TopUp) Insert() error {
@@ -60,7 +60,7 @@ func Recharge(referenceId string, customerId string) (err error) {
 		return errors.New("未提供支付单号")
 	}
 
-	var quota float64
+	var quota int
 	topUp := &TopUp{}
 
 	refCol := "`trade_no`"
@@ -85,8 +85,20 @@ func Recharge(referenceId string, customerId string) (err error) {
 			return err
 		}
 
-		quota = topUp.Money * common.QuotaPerUnit
-		err = tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(map[string]interface{}{"stripe_customer": customerId, "quota": gorm.Expr("quota + ?", quota)}).Error
+		quota = int(decimal.NewFromFloat(topUp.Money).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
+		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("stripe_customer", customerId).Error; err != nil {
+			return err
+		}
+		_, err = grantUserQuotaTx(tx, QuotaFundingGrantParams{
+			UserId:       topUp.UserId,
+			FundingType:  QuotaFundingTypePaid,
+			SourceType:   QuotaFundingSourceStripe,
+			SourceRefId:  topUp.Id,
+			SourceName:   topUp.TradeNo,
+			GrantedQuota: quota,
+			RevenueUSD:   topUp.Money,
+			Remark:       "stripe recharge",
+		})
 		if err != nil {
 			return err
 		}
@@ -99,7 +111,7 @@ func Recharge(referenceId string, customerId string) (err error) {
 		return errors.New("充值失败，请稍后重试")
 	}
 
-	RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(int(quota)), topUp.Amount))
+	RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(quota), topUp.Amount))
 
 	return nil
 }
@@ -288,8 +300,16 @@ func ManualCompleteTopUp(tradeNo string) error {
 			return err
 		}
 
-		// 增加用户额度（立即写库，保持一致性）
-		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
+		if _, err := grantUserQuotaTx(tx, QuotaFundingGrantParams{
+			UserId:       topUp.UserId,
+			FundingType:  QuotaFundingTypePaid,
+			SourceType:   resolveTopUpFundingSource(topUp.PaymentMethod),
+			SourceRefId:  topUp.Id,
+			SourceName:   topUp.TradeNo,
+			GrantedQuota: quotaToAdd,
+			RevenueUSD:   topUp.Money,
+			Remark:       "manual complete topup",
+		}); err != nil {
 			return err
 		}
 
@@ -303,7 +323,7 @@ func ManualCompleteTopUp(tradeNo string) error {
 	}
 
 	// 事务外记录日志，避免阻塞
-	RecordLog(userId, LogTypeTopup, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney))
+	RecordLog(userId, LogTypeTopup, fmt.Sprintf("充值到账成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney))
 	return nil
 }
 func RechargeCreem(referenceId string, customerEmail string, customerName string) (err error) {
@@ -336,13 +356,10 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 			return err
 		}
 
-		// Creem 直接使用 Amount 作为充值额度（整数）
 		quota = topUp.Amount
 
 		// 构建更新字段，优先使用邮箱，如果邮箱为空则使用用户名
-		updateFields := map[string]interface{}{
-			"quota": gorm.Expr("quota + ?", quota),
-		}
+		updateFields := map[string]interface{}{}
 
 		// 如果有客户邮箱，尝试更新用户邮箱（仅当用户邮箱为空时）
 		if customerEmail != "" {
@@ -360,6 +377,20 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		}
 
 		err = tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(updateFields).Error
+		if err != nil {
+			return err
+		}
+
+		_, err = grantUserQuotaTx(tx, QuotaFundingGrantParams{
+			UserId:       topUp.UserId,
+			FundingType:  QuotaFundingTypePaid,
+			SourceType:   QuotaFundingSourceCreem,
+			SourceRefId:  topUp.Id,
+			SourceName:   topUp.TradeNo,
+			GrantedQuota: int(quota),
+			RevenueUSD:   topUp.Money,
+			Remark:       "creem recharge",
+		})
 		if err != nil {
 			return err
 		}
@@ -417,7 +448,16 @@ func RechargeWaffo(tradeNo string) (err error) {
 			return err
 		}
 
-		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
+		if _, err := grantUserQuotaTx(tx, QuotaFundingGrantParams{
+			UserId:       topUp.UserId,
+			FundingType:  QuotaFundingTypePaid,
+			SourceType:   QuotaFundingSourceWaffo,
+			SourceRefId:  topUp.Id,
+			SourceName:   topUp.TradeNo,
+			GrantedQuota: quotaToAdd,
+			RevenueUSD:   topUp.Money,
+			Remark:       "waffo recharge",
+		}); err != nil {
 			return err
 		}
 
@@ -434,4 +474,17 @@ func RechargeWaffo(tradeNo string) (err error) {
 	}
 
 	return nil
+}
+
+func resolveTopUpFundingSource(paymentMethod string) string {
+	switch paymentMethod {
+	case "stripe":
+		return QuotaFundingSourceStripe
+	case "creem":
+		return QuotaFundingSourceCreem
+	case "waffo":
+		return QuotaFundingSourceWaffo
+	default:
+		return QuotaFundingSourceOnlineTopUp
+	}
 }

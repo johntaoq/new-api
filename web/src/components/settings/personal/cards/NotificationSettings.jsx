@@ -45,6 +45,9 @@ import { StatusContext } from '../../../../context/Status';
 import { UserContext } from '../../../../context/User';
 import { useUserPermissions } from '../../../../hooks/common/useUserPermissions';
 import {
+  enforceRequiredSidebarConfig,
+  isRequiredSidebarModule,
+  isRequiredSidebarSection,
   mergeAdminConfig,
   useSidebar,
 } from '../../../../hooks/common/useSidebar';
@@ -63,36 +66,38 @@ const NotificationSettings = ({
   // 左侧边栏设置相关状态
   const [sidebarLoading, setSidebarLoading] = useState(false);
   const [activeTabKey, setActiveTabKey] = useState('notification');
-  const [sidebarModulesUser, setSidebarModulesUser] = useState({
-    chat: {
-      enabled: true,
-      playground: true,
-      chat: true,
-    },
-    console: {
-      enabled: true,
-      detail: true,
-      token: true,
-      log: true,
-      midjourney: true,
-      task: true,
-    },
-    personal: {
-      enabled: true,
-      topup: true,
-      personal: true,
-    },
-    admin: {
-      enabled: true,
-      channel: true,
-      models: true,
-      deployment: true,
-      subscription: true,
-      redemption: true,
-      user: true,
-      setting: true,
-    },
-  });
+  const [sidebarModulesUser, setSidebarModulesUser] = useState(
+    enforceRequiredSidebarConfig({
+      chat: {
+        enabled: true,
+        playground: true,
+        chat: true,
+      },
+      console: {
+        enabled: true,
+        detail: true,
+        token: true,
+        log: true,
+        midjourney: true,
+        task: true,
+      },
+      personal: {
+        enabled: true,
+        topup: true,
+        personal: true,
+      },
+      admin: {
+        enabled: true,
+        channel: true,
+        models: true,
+        deployment: true,
+        subscription: true,
+        redemption: true,
+        user: true,
+        setting: true,
+      },
+    }),
+  );
   const [adminConfig, setAdminConfig] = useState(null);
 
   // 使用后端权限验证替代前端角色判断
@@ -110,6 +115,9 @@ const NotificationSettings = ({
   // 左侧边栏设置处理函数
   const handleSectionChange = (sectionKey) => {
     return (checked) => {
+      if (isRequiredSidebarSection(sectionKey) && !checked) {
+        return;
+      }
       const newModules = {
         ...sidebarModulesUser,
         [sectionKey]: {
@@ -117,12 +125,15 @@ const NotificationSettings = ({
           enabled: checked,
         },
       };
-      setSidebarModulesUser(newModules);
+      setSidebarModulesUser(enforceRequiredSidebarConfig(newModules));
     };
   };
 
   const handleModuleChange = (sectionKey, moduleKey) => {
     return (checked) => {
+      if (isRequiredSidebarModule(sectionKey, moduleKey) && !checked) {
+        return;
+      }
       const newModules = {
         ...sidebarModulesUser,
         [sectionKey]: {
@@ -130,15 +141,17 @@ const NotificationSettings = ({
           [moduleKey]: checked,
         },
       };
-      setSidebarModulesUser(newModules);
+      setSidebarModulesUser(enforceRequiredSidebarConfig(newModules));
     };
   };
 
   const saveSidebarSettings = async () => {
     setSidebarLoading(true);
     try {
+      const normalizedConfig = enforceRequiredSidebarConfig(sidebarModulesUser);
+      setSidebarModulesUser(normalizedConfig);
       const res = await API.put('/api/user/self', {
-        sidebar_modules: JSON.stringify(sidebarModulesUser),
+        sidebar_modules: JSON.stringify(normalizedConfig),
       });
       if (res.data.success) {
         showSuccess(t('侧边栏设置保存成功'));
@@ -155,29 +168,30 @@ const NotificationSettings = ({
   };
 
   const resetSidebarModules = () => {
-    const defaultConfig = {
-      chat: { enabled: true, playground: true, chat: true },
-      console: {
-        enabled: true,
-        detail: true,
-        token: true,
-        log: true,
-        midjourney: true,
-        task: true,
-      },
-      personal: { enabled: true, topup: true, personal: true },
-      admin: {
-        enabled: true,
-        channel: true,
-        models: true,
-        deployment: true,
-        subscription: true,
-        redemption: true,
-        user: true,
-        setting: true,
-      },
-    };
-    setSidebarModulesUser(defaultConfig);
+    setSidebarModulesUser(
+      enforceRequiredSidebarConfig({
+        chat: { enabled: true, playground: true, chat: true },
+        console: {
+          enabled: true,
+          detail: true,
+          token: true,
+          log: true,
+          midjourney: true,
+          task: true,
+        },
+        personal: { enabled: true, topup: true, personal: true },
+        admin: {
+          enabled: true,
+          channel: true,
+          models: true,
+          deployment: true,
+          subscription: true,
+          redemption: true,
+          user: true,
+          setting: true,
+        },
+      }),
+    );
   };
 
   // 加载左侧边栏配置
@@ -207,7 +221,7 @@ const NotificationSettings = ({
           } else {
             userConf = userRes.data.data.sidebar_modules;
           }
-          setSidebarModulesUser(userConf);
+          setSidebarModulesUser(enforceRequiredSidebarConfig(userConf));
         }
       } catch (error) {
         console.error('加载边栏配置失败:', error);
@@ -863,6 +877,7 @@ const NotificationSettings = ({
                             }
                             onChange={handleSectionChange(section.key)}
                             size='default'
+                            disabled={isRequiredSidebarSection(section.key)}
                           />
                         </div>
 
@@ -923,6 +938,10 @@ const NotificationSettings = ({
                                         )}
                                         size='default'
                                         disabled={
+                                          isRequiredSidebarModule(
+                                            section.key,
+                                            module.key,
+                                          ) ||
                                           sidebarModulesUser[section.key]
                                             ?.enabled === false
                                         }

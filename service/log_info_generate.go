@@ -122,6 +122,12 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 	if relayInfo.BillingSource != "" {
 		other["billing_source"] = relayInfo.BillingSource
 	}
+	if relayInfo.PaidQuotaConsumed > 0 {
+		other["paid_quota_used"] = relayInfo.PaidQuotaConsumed
+	}
+	if relayInfo.GiftQuotaConsumed > 0 {
+		other["gift_quota_used"] = relayInfo.GiftQuotaConsumed
+	}
 	if relayInfo.UserSetting.BillingPreference != "" {
 		other["billing_preference"] = relayInfo.UserSetting.BillingPreference
 	}

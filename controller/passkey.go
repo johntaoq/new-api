@@ -338,6 +338,10 @@ func AdminResetPasskey(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if !model.CanManageOpsTarget(c.GetInt("role"), c.GetString("staff_role"), user) {
+		common.ApiErrorMsg(c, "no permission")
+		return
+	}
 
 	if _, err := model.GetPasskeyByUserID(user.Id); err != nil {
 		if errors.Is(err, model.ErrPasskeyNotFound) {

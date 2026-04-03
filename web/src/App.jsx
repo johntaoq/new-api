@@ -21,7 +21,7 @@ import React, { lazy, Suspense, useContext, useMemo } from 'react';
 import { Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
 import User from './pages/User';
-import { AuthRedirect, PrivateRoute, AdminRoute } from './helpers';
+import { AuthRedirect, PrivateRoute, AdminRoute, PermissionRoute } from './helpers';
 import RegisterForm from './components/auth/RegisterForm';
 import LoginForm from './components/auth/LoginForm';
 import NotFound from './pages/NotFound';
@@ -45,6 +45,7 @@ import ModelPage from './pages/Model';
 import ModelDeploymentPage from './pages/ModelDeployment';
 import Playground from './pages/Playground';
 import Subscription from './pages/Subscription';
+import Billing from './pages/Billing';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
 import Setup from './pages/Setup';
@@ -110,33 +111,41 @@ function App() {
         <Route
           path='/console/models'
           element={
-            <AdminRoute>
+            <PermissionRoute permissions={['ops.manage']}>
               <ModelPage />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route
           path='/console/deployment'
           element={
-            <AdminRoute>
+            <PermissionRoute permissions={['ops.manage']}>
               <ModelDeploymentPage />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route
           path='/console/subscription'
           element={
-            <AdminRoute>
+            <PermissionRoute permissions={['ops.manage']}>
               <Subscription />
-            </AdminRoute>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path='/console/billing'
+          element={
+            <PermissionRoute permissions={['finance.view', 'finance.write', 'finance.audit.view', 'system.manage']}>
+              <Billing />
+            </PermissionRoute>
           }
         />
         <Route
           path='/console/channel'
           element={
-            <AdminRoute>
+            <PermissionRoute permissions={['ops.manage']}>
               <Channel />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route
@@ -158,17 +167,17 @@ function App() {
         <Route
           path='/console/redemption'
           element={
-            <AdminRoute>
+            <PermissionRoute permissions={['finance.write', 'system.manage']}>
               <Redemption />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route
           path='/console/user'
           element={
-            <AdminRoute>
+            <PermissionRoute permissions={['ops.manage', 'finance.write', 'system.manage']}>
               <User />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route
@@ -250,11 +259,11 @@ function App() {
         <Route
           path='/console/setting'
           element={
-            <AdminRoute>
+            <PermissionRoute permissions={['system.manage']}>
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
                 <Setting />
               </Suspense>
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route

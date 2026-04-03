@@ -45,6 +45,27 @@ function Test-LocalImage {
     return $LASTEXITCODE -eq 0
 }
 
+function Build-ComposeApp {
+    if ($SkipBuild) {
+        Write-WarnLine "SkipBuild enabled. Reusing existing local image."
+        return
+    }
+
+    Write-WarnLine "This Docker Compose build path may use network on first build if Docker/base-image caches are missing."
+    Write-Step "Building Docker image from current local source..."
+    & docker compose build new-api
+    if ($LASTEXITCODE -eq 0) {
+        return
+    }
+
+    if (Test-LocalImage 'calciumion/new-api:latest') {
+        Write-WarnLine "Build failed, but a local image exists. Falling back to existing local image."
+        return
+    }
+
+    throw "docker compose build new-api failed with exit code $LASTEXITCODE."
+}
+
 function Wait-Until {
     param(
         [scriptblock]$Condition,
@@ -92,26 +113,13 @@ function Ensure-DockerDaemon {
 }
 
 function Start-ComposeApp {
-    $composeArgs = @('compose', 'up', '-d')
-    if (-not $SkipBuild) {
-        $composeArgs += '--build'
-    }
-
     Write-Step "Starting development test environment with Docker Compose..."
-    & docker @composeArgs
+    & docker compose up -d --no-build
     if ($LASTEXITCODE -eq 0) {
         return
     }
 
-    if (-not $SkipBuild -and (Test-LocalImage 'calciumion/new-api:latest')) {
-        Write-WarnLine "Build failed, but a local image exists. Falling back to 'docker compose up -d' without rebuild."
-        & docker compose up -d
-        if ($LASTEXITCODE -eq 0) {
-            return
-        }
-    }
-
-    throw "docker $($composeArgs -join ' ') failed with exit code $LASTEXITCODE."
+    throw "docker compose up -d --no-build failed with exit code $LASTEXITCODE."
 }
 
 function Wait-AppReady {
@@ -136,6 +144,7 @@ function Wait-AppReady {
 try {
     Write-Step "Preparing repository: $PSScriptRoot"
     Ensure-DockerDaemon
+    Build-ComposeApp
     Start-ComposeApp
     Wait-AppReady
 
@@ -144,6 +153,8 @@ try {
     Write-Host "URL: http://localhost:3000" -ForegroundColor Green
     Write-Host "View logs: docker compose logs -f new-api"
     Write-Host "Stop env:  docker compose down"
+    Write-Host "Fast local-only test: powershell -ExecutionPolicy Bypass -File .\\start_test.ps1"
+    Write-Host "Tip: use .\\start_test.ps1 when you want local source rebuilds only and want to avoid extra external pulls as much as possible."
 } catch {
     Write-Host ''
     Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
