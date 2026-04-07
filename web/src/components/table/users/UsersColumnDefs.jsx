@@ -31,7 +31,6 @@ import {
 import { IconMore } from '@douyinfe/semi-icons';
 import {
   hasAnyPermission,
-  hasPermission,
   renderGroup,
   renderNumber,
   renderQuota,
@@ -39,22 +38,44 @@ import {
 
 const renderRole = (record, t) => {
   const effectiveRole =
-    record.effective_staff_role || record.staff_role || (record.role >= 100 ? 'root' : record.role >= 10 ? 'admin' : '');
+    record.effective_staff_role ||
+    record.staff_role ||
+    (record.role >= 100 ? 'root' : record.role >= 10 ? 'admin' : '');
 
   if (record.role >= 100) {
-    return <Tag color='orange' shape='circle'>{t('超级管理员')}</Tag>;
+    return (
+      <Tag color='orange' shape='circle'>
+        {t('超级管理员')}
+      </Tag>
+    );
   }
 
   if (effectiveRole === 'admin') {
-    return <Tag color='yellow' shape='circle'>{t('运营管理员')}</Tag>;
+    return (
+      <Tag color='yellow' shape='circle'>
+        {t('运营管理员')}
+      </Tag>
+    );
   }
   if (effectiveRole === 'finance') {
-    return <Tag color='cyan' shape='circle'>{t('财务')}</Tag>;
+    return (
+      <Tag color='cyan' shape='circle'>
+        {t('财务')}
+      </Tag>
+    );
   }
   if (effectiveRole === 'audit') {
-    return <Tag color='violet' shape='circle'>{t('审计')}</Tag>;
+    return (
+      <Tag color='violet' shape='circle'>
+        {t('审计')}
+      </Tag>
+    );
   }
-  return <Tag color='blue' shape='circle'>{t('普通用户')}</Tag>;
+  return (
+    <Tag color='blue' shape='circle'>
+      {t('普通用户')}
+    </Tag>
+  );
 };
 
 const renderUsername = (text, record) => {
@@ -139,7 +160,9 @@ const renderQuotaUsage = (record, t) => {
     <Popover content={popoverContent} position='top'>
       <Tag color='white' shape='circle'>
         <div className='flex flex-col items-end'>
-          <span className='text-xs leading-none'>{`${renderQuota(remain)} / ${renderQuota(total)}`}</span>
+          <span className='text-xs leading-none'>
+            {`${renderQuota(remain)} / ${renderQuota(total)}`}
+          </span>
           <Progress
             percent={percent}
             aria-label='quota usage'

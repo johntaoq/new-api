@@ -66,7 +66,7 @@ const UsersFilters = ({
           <Form.Input
             field='searchKeyword'
             prefix={<IconSearch />}
-            placeholder={t('鏀寔鎼滅储鐢ㄦ埛鐨?ID銆佺敤鎴峰悕銆佹樉绀哄悕绉板拰閭鍦板潃')}
+            placeholder={t('支持搜索用户 ID、用户名、显示名称和邮箱地址')}
             showClear
             pure
             size='small'
@@ -76,7 +76,7 @@ const UsersFilters = ({
           <div className='w-full md:w-48'>
             <Form.Select
               field='searchGroup'
-              placeholder={t('閫夋嫨鍒嗙粍')}
+              placeholder={t('选择分组')}
               optionList={groupOptions}
               onChange={() => {
                 setTimeout(() => {
@@ -98,7 +98,7 @@ const UsersFilters = ({
             className='flex-1 md:flex-initial md:w-auto'
             size='small'
           >
-            {t('鏌ヨ')}
+            {t('查询')}
           </Button>
           <Button
             type='tertiary'
@@ -106,7 +106,7 @@ const UsersFilters = ({
             className='flex-1 md:flex-initial md:w-auto'
             size='small'
           >
-            {t('閲嶇疆')}
+            {t('重置')}
           </Button>
         </div>
       </div>

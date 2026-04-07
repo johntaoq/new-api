@@ -23,7 +23,7 @@ import { hasAnyPermission } from '../../../helpers';
 
 const UsersActions = ({ setShowAddUser, t }) => {
   const canManageOps = hasAnyPermission('ops.manage', 'system.manage');
-  // Add new user
+
   const handleAddUser = () => {
     setShowAddUser(true);
   };
