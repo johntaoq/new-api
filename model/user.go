@@ -611,8 +611,8 @@ func (user *User) Delete() error {
 		return err
 	}
 
-    // Invalidate cached user data after soft delete.
-    return invalidateUserCache(user.Id)
+	// Invalidate cached user data after soft delete.
+	return invalidateUserCache(user.Id)
 }
 
 func (user *User) HardDelete() error {
@@ -631,13 +631,13 @@ func (user *User) ValidateAndFill() (err error) {
 	password := user.Password
 	username := strings.TrimSpace(user.Username)
 	if username == "" || password == "" {
-        return errors.New("鐢ㄦ埛鍚嶆垨瀵嗙爜涓虹┖")
+		return errors.New("用户名或密码为空")
 	}
 	// find buy username or email
 	DB.Where("username = ? OR email = ?", username, username).First(user)
 	okay := common.ValidatePasswordAndHash(password, user.Password)
 	if !okay || user.Status != common.UserStatusEnabled {
-        return errors.New("鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒锛屾垨鐢ㄦ埛宸茶绂佺敤")
+		return errors.New("用户名或密码错误，或用户已被封禁")
 	}
 	return nil
 }
@@ -977,7 +977,7 @@ func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
 		return
 	}
 
-	//// 闂備礁鎼ú銈夋偤閵娾晛钃熷┑鐘插绾句粙鏌熼幆褏锛嶉柟?	//if err := invalidateUserCache(id); err != nil {
+	//// 闂傚倷绀侀幖顐⒚洪妶澶嬪仱闁靛ň鏅涢拑鐔封攽閻樻彃顏痪鍙ョ矙閺岀喖骞嗚閿涘秹鏌?	//if err := invalidateUserCache(id); err != nil {
 	//	common.SysError("failed to invalidate user cache: " + err.Error())
 	//}
 }
