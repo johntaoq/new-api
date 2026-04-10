@@ -51,6 +51,9 @@ const ChannelsPage = () => {
         refresh={channelsData.refresh}
       />
       <EditChannelModal
+        key={
+          channelsData.editingChannel?.id ?? `create-${channelsData.createModalVersion}`
+        }
         refresh={channelsData.refresh}
         visible={channelsData.showEdit}
         handleClose={channelsData.closeEdit}

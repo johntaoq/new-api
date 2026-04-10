@@ -56,6 +56,7 @@ export const useChannelsData = () => {
 
   // UI states
   const [showEdit, setShowEdit] = useState(false);
+  const [createModalVersion, setCreateModalVersion] = useState(0);
   const [enableBatchDelete, setEnableBatchDelete] = useState(false);
   const [editingChannel, setEditingChannel] = useState({ id: undefined });
   const [showEditTag, setShowEditTag] = useState(false);
@@ -654,6 +655,17 @@ export const useChannelsData = () => {
     setShowEdit(false);
   };
 
+  const openCreateChannel = () => {
+    setEditingChannel({ id: undefined });
+    setCreateModalVersion((version) => version + 1);
+    setShowEdit(true);
+  };
+
+  const openEditChannel = (channel) => {
+    setEditingChannel(channel);
+    setShowEdit(true);
+  };
+
   // Row style
   const handleRow = (record, index) => {
     if (record.status !== 1) {
@@ -1150,6 +1162,7 @@ export const useChannelsData = () => {
     // UI states
     showEdit,
     setShowEdit,
+    createModalVersion,
     editingChannel,
     setEditingChannel,
     showEditTag,
@@ -1224,6 +1237,8 @@ export const useChannelsData = () => {
     updateChannelProperty,
     submitTagEdit,
     closeEdit,
+    openCreateChannel,
+    openEditChannel,
     handleRow,
     batchSetChannelTag,
     batchDeleteChannels,

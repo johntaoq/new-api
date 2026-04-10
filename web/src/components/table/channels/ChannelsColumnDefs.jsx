@@ -314,6 +314,7 @@ export const getChannelsColumns = ({
   testChannel,
   setCurrentTestChannel,
   setShowModelTestModal,
+  openEditChannel,
   setEditingChannel,
   setShowEdit,
   setShowEditTag,
@@ -328,6 +329,15 @@ export const getChannelsColumns = ({
   openUpstreamUpdateModal,
   detectChannelUpstreamUpdates,
 }) => {
+  const handleOpenEdit = (channel) => {
+    if (typeof openEditChannel === 'function') {
+      openEditChannel(channel);
+      return;
+    }
+    setEditingChannel?.(channel);
+    setShowEdit?.(true);
+  };
+
   return [
     {
       key: COLUMN_KEYS.ID,
@@ -819,10 +829,7 @@ export const getChannelsColumns = ({
                   <Button
                     type='tertiary'
                     size='small'
-                    onClick={() => {
-                      setEditingChannel(record);
-                      setShowEdit(true);
-                    }}
+                    onClick={() => handleOpenEdit(record)}
                   >
                     {t('编辑')}
                   </Button>
@@ -851,10 +858,7 @@ export const getChannelsColumns = ({
                 <Button
                   type='tertiary'
                   size='small'
-                  onClick={() => {
-                    setEditingChannel(record);
-                    setShowEdit(true);
-                  }}
+                  onClick={() => handleOpenEdit(record)}
                 >
                   {t('编辑')}
                 </Button>
