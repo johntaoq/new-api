@@ -1,0 +1,41 @@
+name: Deploy Azure40
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag to deploy
+        required: true
+        default: latest
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        with:
+          host: ${{ secrets.AZURE40_HOST }}
+          username: ${{ secrets.AZURE40_USER }}
+          key: ${{ secrets.AZURE40_SSH_KEY }}
+          script_stop: true
+          envs: IMAGE_TAG,GHCR_USERNAME,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            cd /srv/unikeyx/new-api
+            if [ -n "${GHCR_USERNAME}" ] && [ -n "${GHCR_TOKEN}" ]; then
+              echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+            fi
+            export NEW_API_IMAGE_TAG="${IMAGE_TAG}"
+            docker compose pull new-api
+            docker compose up -d
+            timeout 120 sh -c 'until curl -fsS http://127.0.0.1:3000/api/status >/dev/null; do sleep 5; done'

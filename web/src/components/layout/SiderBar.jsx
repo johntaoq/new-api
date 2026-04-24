@@ -21,6 +21,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getLucideIcon } from '../../helpers/render';
+import { buildStudioLaunchUrl, getStoredUserId } from '../../helpers/studio';
 import { ChevronLeft } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import { useSidebar } from '../../hooks/common/useSidebar';
@@ -72,6 +73,10 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const [openedKeys, setOpenedKeys] = useState([]);
   const location = useLocation();
   const [routerMapState, setRouterMapState] = useState(routerMap);
+  const studioLaunchUrl = useMemo(
+    () => buildStudioLaunchUrl(getStoredUserId()),
+    [location.pathname],
+  );
   const canViewFinance = hasAnyPermission(
     'finance.view',
     'finance.write',
@@ -100,6 +105,15 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         itemKey: 'token',
         to: '/token',
       },
+      ...(studioLaunchUrl
+        ? [
+            {
+              text: 'AI STUDIO',
+              itemKey: 'studio',
+              externalHref: studioLaunchUrl,
+            },
+          ]
+        : []),
       {
         text: t('使用日志'),
         itemKey: 'log',
@@ -134,6 +148,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     localStorage.getItem('enable_data_export'),
     localStorage.getItem('enable_drawing'),
     localStorage.getItem('enable_task'),
+    studioLaunchUrl,
     t,
     isModuleVisible,
   ]);
@@ -244,6 +259,27 @@ const SiderBar = ({ onNavigate = () => {} }) => {
 
     return filteredItems;
   }, [chatItems, t, isModuleVisible]);
+
+  const navItemsByKey = useMemo(() => {
+    const allItems = [
+      ...workspaceItems,
+      ...financeItems,
+      ...adminItems,
+      ...chatMenuItems,
+    ];
+
+    const map = new Map();
+    allItems.forEach((item) => {
+      map.set(item.itemKey, item);
+      if (Array.isArray(item.items)) {
+        item.items.forEach((subItem) => {
+          map.set(subItem.itemKey, subItem);
+        });
+      }
+    });
+
+    return map;
+  }, [workspaceItems, financeItems, adminItems, chatMenuItems]);
 
   // 更新路由映射，添加聊天路由
   const updateRouterMapWithChats = (chats) => {
@@ -432,6 +468,19 @@ const SiderBar = ({ onNavigate = () => {} }) => {
           hoverStyle='sidebar-nav-item:hover'
           selectedStyle='sidebar-nav-item-selected'
           renderWrapper={({ itemElement, props }) => {
+            const itemConfig = navItemsByKey.get(props.itemKey);
+            if (itemConfig?.externalHref) {
+              return (
+                <a
+                  style={{ textDecoration: 'none' }}
+                  href={itemConfig.externalHref}
+                  onClick={onNavigate}
+                >
+                  {itemElement}
+                </a>
+              );
+            }
+
             const to =
               routerMapState[props.itemKey] || routerMap[props.itemKey];
 
