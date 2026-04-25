@@ -58,3 +58,12 @@ export const buildStudioLaunchUrl = (userId) => {
   url.searchParams.set('uid', userId);
   return url.toString();
 };
+
+export const openStudioLaunchUrl = (userId) => {
+  const launchUrl = buildStudioLaunchUrl(userId);
+  if (!launchUrl) {
+    return null;
+  }
+
+  return window.open(launchUrl, '_blank', 'noopener,noreferrer');
+};

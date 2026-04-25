@@ -474,6 +474,8 @@ const SiderBar = ({ onNavigate = () => {} }) => {
                 <a
                   style={{ textDecoration: 'none' }}
                   href={itemConfig.externalHref}
+                  target='_blank'
+                  rel='noopener noreferrer'
                   onClick={onNavigate}
                 >
                   {itemElement}
