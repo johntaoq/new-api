@@ -295,7 +295,9 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if common2.DebugEnabled {
 		println("fullRequestURL:", fullRequestURL)
 	}
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
+	ctx, cancel := buildRequestContext(c, info)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
@@ -326,7 +328,9 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	if common2.DebugEnabled {
 		println("fullRequestURL:", fullRequestURL)
 	}
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
+	ctx, cancel := buildRequestContext(c, info)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
@@ -349,6 +353,20 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
 	return resp, nil
+}
+
+func buildRequestContext(c *gin.Context, info *common.RelayInfo) (context.Context, context.CancelFunc) {
+	ctx := c.Request.Context()
+	if info == nil {
+		return ctx, func() {}
+	}
+	if info.RelayMode != constant.RelayModeImagesGenerations && info.RelayMode != constant.RelayModeImagesEdits {
+		return ctx, func() {}
+	}
+	if common2.ImageRelayTimeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, time.Duration(common2.ImageRelayTimeout)*time.Second)
 }
 
 func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*websocket.Conn, error) {

@@ -123,7 +123,9 @@ var SyncFrequency int // unit is second
 var BatchUpdateEnabled = false
 var BatchUpdateInterval int
 
-var RelayTimeout int // unit is second
+var RelayTimeout int      // unit is second
+var ImageRelayTimeout int // unit is second
+var ImageRelayConcurrency int
 
 var RelayMaxIdleConns int
 var RelayMaxIdleConnsPerHost int

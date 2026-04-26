@@ -2,10 +2,13 @@ package relay
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -20,6 +23,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var (
+	imageRelaySemaphoreMu       sync.Mutex
+	imageRelaySemaphore         chan struct{}
+	imageRelaySemaphoreCapacity int
+)
+
+func acquireImageRelaySlot() (func(), bool) {
+	limit := common.ImageRelayConcurrency
+	if limit <= 0 {
+		return func() {}, true
+	}
+
+	imageRelaySemaphoreMu.Lock()
+	if imageRelaySemaphore == nil || imageRelaySemaphoreCapacity != limit {
+		imageRelaySemaphore = make(chan struct{}, limit)
+		imageRelaySemaphoreCapacity = limit
+	}
+	sem := imageRelaySemaphore
+	imageRelaySemaphoreMu.Unlock()
+
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, true
+	default:
+		return nil, false
+	}
+}
+
 func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
 
@@ -27,6 +58,12 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	if !ok {
 		return types.NewErrorWithStatusCode(fmt.Errorf("invalid request type, expected dto.ImageRequest, got %T", info.Request), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
+
+	releaseImageRelaySlot, ok := acquireImageRelaySlot()
+	if !ok {
+		return types.NewErrorWithStatusCode(fmt.Errorf("too many image requests, please retry later"), types.ErrorCodeChannelImageRelayBusy, http.StatusTooManyRequests, types.ErrOptionWithSkipRetry())
+	}
+	defer releaseImageRelaySlot()
 
 	request, err := common.DeepCopy(imageReq)
 	if err != nil {
@@ -87,6 +124,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return types.NewErrorWithStatusCode(fmt.Errorf("image relay timeout after %d seconds", common.ImageRelayTimeout), types.ErrorCodeChannelResponseTimeExceeded, http.StatusGatewayTimeout, types.ErrOptionWithSkipRetry())
+		}
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
 	var httpResp *http.Response
