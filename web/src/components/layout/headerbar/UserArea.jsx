@@ -28,7 +28,10 @@ import {
   IconKey,
 } from '@douyinfe/semi-icons';
 import { stringToColor } from '../../../helpers';
-import { buildStudioLaunchUrl } from '../../../helpers/studio';
+import {
+  buildStudioLaunchUrl,
+  openStudioLaunchUrl,
+} from '../../../helpers/studio';
 import SkeletonWrapper from '../components/SkeletonWrapper';
 
 const UserArea = ({
@@ -109,7 +112,7 @@ const UserArea = ({
               {studioLaunchUrl && (
                 <Dropdown.Item
                   onClick={() => {
-                    window.location.assign(studioLaunchUrl);
+                    openStudioLaunchUrl(userState.user.id);
                   }}
                   className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-blue-500 dark:hover:!text-white'
                 >
