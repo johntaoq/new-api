@@ -21,7 +21,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getLucideIcon } from '../../helpers/render';
-import { buildStudioLaunchUrl, getStoredUserId } from '../../helpers/studio';
+import {
+  buildStudioLaunchUrl,
+  getStoredUserId,
+  openStudioLaunchUrl,
+} from '../../helpers/studio';
 import { ChevronLeft } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import { useSidebar } from '../../hooks/common/useSidebar';
@@ -476,7 +480,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
                   href={itemConfig.externalHref}
                   target='_blank'
                   rel='noopener noreferrer'
-                  onClick={onNavigate}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onNavigate();
+                    openStudioLaunchUrl(getStoredUserId());
+                  }}
                 >
                   {itemElement}
                 </a>

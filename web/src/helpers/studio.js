@@ -59,11 +59,54 @@ export const buildStudioLaunchUrl = (userId) => {
   return url.toString();
 };
 
-export const openStudioLaunchUrl = (userId) => {
+const verifyNewApiSession = async (userId) => {
+  const response = await fetch('/api/user/self', {
+    method: 'GET',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-store',
+      'New-API-User': String(userId),
+    },
+  });
+
+  if (!response.ok) {
+    return false;
+  }
+
+  const payload = await response.json();
+  return (
+    payload?.success === true &&
+    String(payload?.data?.id ?? '') === String(userId)
+  );
+};
+
+export const openStudioLaunchUrl = async (userId) => {
   const launchUrl = buildStudioLaunchUrl(userId);
   if (!launchUrl) {
     return null;
   }
 
-  return window.open(launchUrl, '_blank', 'noopener,noreferrer');
+  const target = window.open('about:blank', '_blank');
+
+  try {
+    const verified = await verifyNewApiSession(userId);
+    if (!verified) {
+      target?.close();
+      window.alert('New API 登录态已失效，请刷新或重新登录后再打开 AI STUDIO。');
+      return null;
+    }
+
+    if (target) {
+      target.opener = null;
+      target.location.href = launchUrl;
+      return target;
+    }
+
+    return window.open(launchUrl, '_blank', 'noopener,noreferrer');
+  } catch {
+    target?.close();
+    window.alert('无法验证 New API 登录态，请刷新页面后重试。');
+    return null;
+  }
 };
