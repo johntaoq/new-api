@@ -47,19 +47,37 @@ const IMAGE_ENDPOINT_TYPE = 'image-generation';
 const IMAGE_HISTORY_STORAGE_KEY = 'image_playground_history';
 const MAX_HISTORY_ITEMS = 8;
 const MAX_HISTORY_CHARS = 4_000_000;
+const IMAGE_REQUEST_TIMEOUT_MS = 610000;
 
-const sizeOptions = [
+const gptImage2SizeOptions = [
   { label: '1024x1024', value: '1024x1024' },
   { label: '1024x1536', value: '1024x1536' },
   { label: '1536x1024', value: '1536x1024' },
-  { label: '1024x1792', value: '1024x1792' },
-  { label: '1792x1024', value: '1792x1024' },
+  { label: '2048x2048', value: '2048x2048' },
+  { label: '3840x2160', value: '3840x2160' },
+  { label: '2160x3840', value: '2160x3840' },
 ];
 
-const qualityOptions = [
-  { label: 'Auto', value: 'auto' },
-  { label: 'Standard', value: 'standard' },
-  { label: 'HD', value: 'hd' },
+const gptImageSizeOptions = [
+  { label: '1024x1024', value: '1024x1024' },
+  { label: '1024x1536', value: '1024x1536' },
+  { label: '1536x1024', value: '1536x1024' },
+];
+
+const maiImageSizeOptions = [
+  { label: '1024x1024', value: '1024x1024' },
+  { label: '1024x768', value: '1024x768' },
+  { label: '768x1024', value: '768x1024' },
+  { label: '1365x768', value: '1365x768' },
+  { label: '768x1365', value: '768x1365' },
+];
+
+const defaultSizeOptions = [
+  { label: '1024x1024', value: '1024x1024' },
+];
+
+const gptImageQualityOptions = [
+  { label: '默认', value: 'auto' },
   { label: 'Low', value: 'low' },
   { label: 'Medium', value: 'medium' },
   { label: 'High', value: 'high' },
@@ -84,6 +102,56 @@ const isImageModelName = (modelName = '') => {
 
 const isEditCapableModel = (modelName = '') =>
   modelName.toLowerCase().includes('gpt-image');
+
+const getImageModelProfile = (modelName = '') => {
+  const normalized = modelName.toLowerCase();
+  if (normalized.includes('mai-image')) {
+    return {
+      kind: 'mai',
+      sizeOptions: maiImageSizeOptions,
+      qualityOptions: [],
+      supportsQuality: false,
+      supportsN: false,
+      requestShape: 'width-height',
+    };
+  }
+  if (normalized.includes('gpt-image-2')) {
+    return {
+      kind: 'gpt-image-2',
+      sizeOptions: gptImage2SizeOptions,
+      qualityOptions: gptImageQualityOptions,
+      supportsQuality: true,
+      supportsN: true,
+      requestShape: 'size',
+    };
+  }
+  if (normalized.includes('gpt-image')) {
+    return {
+      kind: 'gpt-image',
+      sizeOptions: gptImageSizeOptions,
+      qualityOptions: gptImageQualityOptions,
+      supportsQuality: true,
+      supportsN: true,
+      requestShape: 'size',
+    };
+  }
+  return {
+    kind: 'default',
+    sizeOptions: defaultSizeOptions,
+    qualityOptions: [],
+    supportsQuality: false,
+    supportsN: true,
+    requestShape: 'size',
+  };
+};
+
+const parseImageSize = (value = '1024x1024') => {
+  const [width, height] = value.split('x').map((item) => Number(item));
+  return {
+    width: Number.isFinite(width) ? width : 1024,
+    height: Number.isFinite(height) ? height : 1024,
+  };
+};
 
 const buildImageModelOptions = (models, usableGroup, autoGroups) => {
   if (!Array.isArray(models)) {
@@ -268,8 +336,33 @@ const ImagePlayground = () => {
     () => models.find((item) => item.value === model),
     [model, models],
   );
+  const selectedModelProfile = useMemo(
+    () => getImageModelProfile(model),
+    [model],
+  );
   const canEditSelectedModel = isEditCapableModel(model);
   const isEditRequest = referenceImages.length > 0;
+
+  useEffect(() => {
+    if (
+      selectedModelProfile.sizeOptions.length > 0 &&
+      !selectedModelProfile.sizeOptions.some((option) => option.value === size)
+    ) {
+      setSize(selectedModelProfile.sizeOptions[0].value);
+    }
+    if (
+      selectedModelProfile.supportsQuality &&
+      selectedModelProfile.qualityOptions.length > 0 &&
+      !selectedModelProfile.qualityOptions.some(
+        (option) => option.value === quality,
+      )
+    ) {
+      setQuality(selectedModelProfile.qualityOptions[0].value);
+    }
+    if (!selectedModelProfile.supportsQuality && quality !== 'auto') {
+      setQuality('auto');
+    }
+  }, [quality, selectedModelProfile, size]);
 
   useEffect(() => {
     if (!canEditSelectedModel && referenceImages.length > 0) {
@@ -342,7 +435,7 @@ const ImagePlayground = () => {
         formData.append('prompt', trimmedPrompt);
         formData.append('n', String(n));
         formData.append('size', size);
-        if (quality !== 'auto') {
+        if (selectedModelProfile.supportsQuality && quality !== 'auto') {
           formData.append('quality', quality);
         }
         if (group) {
@@ -353,24 +446,32 @@ const ImagePlayground = () => {
           formData.append(imageFieldName, item.file, item.name);
         });
         res = await API.post('/pg/images/edits', formData, {
-          timeout: 190000,
+          timeout: IMAGE_REQUEST_TIMEOUT_MS,
           skipErrorHandler: true,
         });
       } else {
         const payload = {
           model,
           prompt: trimmedPrompt,
-          n,
-          size,
         };
-        if (quality !== 'auto') {
+        if (selectedModelProfile.supportsN) {
+          payload.n = n;
+        }
+        if (selectedModelProfile.requestShape === 'width-height') {
+          const dimensions = parseImageSize(size);
+          payload.width = dimensions.width;
+          payload.height = dimensions.height;
+        } else {
+          payload.size = size;
+        }
+        if (selectedModelProfile.supportsQuality && quality !== 'auto') {
           payload.quality = quality;
         }
         if (group) {
           payload.group = group;
         }
         res = await API.post('/pg/images/generations', payload, {
-          timeout: 190000,
+          timeout: IMAGE_REQUEST_TIMEOUT_MS,
           skipErrorHandler: true,
         });
       }
@@ -483,32 +584,36 @@ const ImagePlayground = () => {
                 <Select
                   value={size}
                   onChange={setSize}
-                  optionList={sizeOptions}
+                  optionList={selectedModelProfile.sizeOptions}
                   style={{ width: '100%' }}
                 />
               </div>
 
-              <div>
-                <Text className='mb-2 block'>图片质量</Text>
-                <Select
-                  value={quality}
-                  onChange={setQuality}
-                  optionList={qualityOptions}
-                  style={{ width: '100%' }}
-                />
-              </div>
+              {selectedModelProfile.supportsQuality ? (
+                <div>
+                  <Text className='mb-2 block'>图片质量</Text>
+                  <Select
+                    value={quality}
+                    onChange={setQuality}
+                    optionList={selectedModelProfile.qualityOptions}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              ) : null}
 
-              <div>
-                <Text className='mb-2 block'>数量</Text>
-                <InputNumber
-                  value={n}
-                  min={1}
-                  max={4}
-                  step={1}
-                  onChange={(value) => setN(Number(value) || 1)}
-                  style={{ width: '100%' }}
-                />
-              </div>
+              {selectedModelProfile.supportsN ? (
+                <div>
+                  <Text className='mb-2 block'>数量</Text>
+                  <InputNumber
+                    value={n}
+                    min={1}
+                    max={4}
+                    step={1}
+                    onChange={(value) => setN(Number(value) || 1)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              ) : null}
 
               <div>
                 <Text className='mb-2 block'>提示词</Text>
@@ -566,6 +671,8 @@ const ImagePlayground = () => {
                         />
                         <button
                           type='button'
+                          title='删除参考图'
+                          aria-label='删除参考图'
                           className='absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white'
                           onClick={() => removeReferenceImage(index)}
                         >
