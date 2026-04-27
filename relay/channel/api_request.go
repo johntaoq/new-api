@@ -296,9 +296,9 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		println("fullRequestURL:", fullRequestURL)
 	}
 	ctx, cancel := buildRequestContext(c, info)
-	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
 	headers := req.Header
@@ -315,8 +315,10 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	applyHeaderOverrideToRequest(req, headerOverride)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
+	wrapResponseBodyWithCancel(resp, cancel)
 	return resp, nil
 }
 
@@ -329,9 +331,9 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 		println("fullRequestURL:", fullRequestURL)
 	}
 	ctx, cancel := buildRequestContext(c, info)
-	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
 	// set form data
@@ -350,9 +352,35 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	applyHeaderOverrideToRequest(req, headerOverride)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
+	wrapResponseBodyWithCancel(resp, cancel)
 	return resp, nil
+}
+
+type cancelOnCloseReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (r *cancelOnCloseReadCloser) Close() error {
+	err := r.ReadCloser.Close()
+	r.cancel()
+	return err
+}
+
+func wrapResponseBodyWithCancel(resp *http.Response, cancel context.CancelFunc) {
+	if resp == nil || resp.Body == nil || cancel == nil {
+		if cancel != nil {
+			cancel()
+		}
+		return
+	}
+	resp.Body = &cancelOnCloseReadCloser{
+		ReadCloser: resp.Body,
+		cancel:     cancel,
+	}
 }
 
 func buildRequestContext(c *gin.Context, info *common.RelayInfo) (context.Context, context.CancelFunc) {
