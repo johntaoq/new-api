@@ -22,6 +22,7 @@ import { useTokenKeys } from '../../hooks/chat/useTokenKeys';
 import { Spin } from '@douyinfe/semi-ui';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { buildExternalWebUrl } from '../../helpers/web-url';
 
 const ChatPage = () => {
   const { t } = useTranslation();
@@ -39,11 +40,7 @@ const ChatPage = () => {
         if (Array.isArray(chats) && chats.length > 0) {
           for (let k in chats[id]) {
             link = chats[id][k];
-            link = link.replaceAll(
-              '{address}',
-              encodeURIComponent(serverAddress),
-            );
-            link = link.replaceAll('{key}', 'sk-' + key);
+            link = buildExternalWebUrl({ url: link, key, serverAddress });
           }
         }
       }

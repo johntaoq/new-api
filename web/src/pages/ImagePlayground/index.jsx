@@ -272,6 +272,8 @@ const ImagePlayground = () => {
     src: '',
     title: '',
     scale: 1,
+    width: 0,
+    height: 0,
   });
 
   const hasModels = models.length > 0;
@@ -425,6 +427,8 @@ const ImagePlayground = () => {
       src,
       title,
       scale: 1,
+      width: 0,
+      height: 0,
     });
   };
 
@@ -444,6 +448,45 @@ const ImagePlayground = () => {
 
   const resetPreviewScale = () => {
     setPreview((current) => ({ ...current, scale: 1 }));
+  };
+
+  const updatePreviewSize = (event) => {
+    const { naturalWidth, naturalHeight } = event.currentTarget;
+    setPreview((current) => ({
+      ...current,
+      width: naturalWidth,
+      height: naturalHeight,
+    }));
+  };
+
+  const getPreviewImageStyle = () => {
+    if (!preview.width || !preview.height) {
+      return {
+        maxWidth: '100%',
+        maxHeight: '72vh',
+        width: 'auto',
+        height: 'auto',
+      };
+    }
+
+    const viewportWidth = Math.max(
+      280,
+      Math.min(window.innerWidth * 0.96, 1180) - 40,
+    );
+    const viewportHeight = Math.max(240, window.innerHeight * 0.72);
+    const fitRatio = Math.min(
+      viewportWidth / preview.width,
+      viewportHeight / preview.height,
+      1,
+    );
+
+    return {
+      width: `${preview.width * fitRatio * preview.scale}px`,
+      height: `${preview.height * fitRatio * preview.scale}px`,
+      maxWidth: 'none',
+      maxHeight: 'none',
+      transition: 'width 120ms ease-out, height 120ms ease-out',
+    };
   };
 
   const handleGenerate = async () => {
@@ -558,7 +601,7 @@ const ImagePlayground = () => {
             </div>
             <div>
               <Title heading={3} className='!m-0'>
-                Image操场
+                图片生成
               </Title>
               <Text type='tertiary'>
                 直接调用图片生成接口，模型列表只展示图片生成模型。
@@ -572,9 +615,6 @@ const ImagePlayground = () => {
             <div className='mb-5 flex items-center justify-between'>
               <div>
                 <Text strong>生成参数</Text>
-                <div className='mt-1 text-xs text-gray-500'>
-                  支持文本生图；选择 gpt-image 系列模型并上传参考图后会走改图。
-                </div>
               </div>
               {selectedModelMeta?.description ? (
                 <Tag color='cyan'>{IMAGE_ENDPOINT_TYPE}</Tag>
@@ -979,13 +1019,9 @@ const ImagePlayground = () => {
                 <img
                   src={preview.src}
                   alt={preview.title || '图片预览'}
+                  onLoad={updatePreviewSize}
                   className='max-w-none select-none rounded-lg bg-white shadow-2xl'
-                  style={{
-                    width: `${preview.scale * 100}%`,
-                    maxWidth: 'none',
-                    maxHeight: preview.scale <= 1 ? '72vh' : 'none',
-                    transition: 'width 120ms ease-out',
-                  }}
+                  style={getPreviewImageStyle()}
                 />
               </div>
             ) : null}

@@ -272,7 +272,7 @@ const NotificationSettings = ({
         { key: 'chat', title: t('聊天'), description: t('聊天会话管理') },
         {
           key: 'image_playground',
-          title: 'Image操场',
+          title: '图片生成',
           description: '图片生成测试环境',
         },
       ],

@@ -250,7 +250,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/playground',
       },
       {
-        text: 'Image操场',
+        text: '图片生成',
         itemKey: 'image_playground',
         to: '/image-playground',
       },
