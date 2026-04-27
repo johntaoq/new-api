@@ -93,7 +93,9 @@ export const openStudioLaunchUrl = async (userId) => {
     const verified = await verifyNewApiSession(userId);
     if (!verified) {
       target?.close();
-      window.alert('New API 登录态已失效，请刷新或重新登录后再打开 AI STUDIO。');
+      window.alert(
+        'New API session is invalid. Refresh or sign in again before opening AI STUDIO.',
+      );
       return null;
     }
 
@@ -106,7 +108,9 @@ export const openStudioLaunchUrl = async (userId) => {
     return window.open(launchUrl, '_blank', 'noopener,noreferrer');
   } catch {
     target?.close();
-    window.alert('无法验证 New API 登录态，请刷新页面后重试。');
+    window.alert(
+      'Unable to verify the New API session. Refresh the page and try again.',
+    );
     return null;
   }
 };
