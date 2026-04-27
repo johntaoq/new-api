@@ -452,6 +452,11 @@ const ImagePlayground = () => {
                   filter
                   style={{ width: '100%' }}
                 />
+                {canEditSelectedModel ? (
+                  <div className='mt-2 text-sm font-medium text-red-600'>
+                    GPT生图需要超过5分钟，不要离开，离开后如果后台生图成功依然扣费，会导致账户扣费，不退款
+                  </div>
+                ) : null}
               </div>
 
               <div>
