@@ -81,6 +81,9 @@ const isImageModelName = (modelName = '') => {
   return imageModelNamePatterns.some((pattern) => normalized.includes(pattern));
 };
 
+const isEditCapableModel = (modelName = '') =>
+  modelName.toLowerCase().includes('gpt-image');
+
 const buildImageModelOptions = (models, usableGroup, autoGroups) => {
   if (!Array.isArray(models)) {
     return [];
@@ -109,6 +112,7 @@ const buildImageModelOptions = (models, usableGroup, autoGroups) => {
       label: model.model_name,
       value: model.model_name,
       description: model.supported_endpoint_types?.join(', ') || '',
+      editCapable: isEditCapableModel(model.model_name),
     }))
     .sort((a, b) => a.value.localeCompare(b.value));
 };
@@ -119,7 +123,11 @@ const buildFallbackModelOptions = (models) => {
   }
   return models
     .filter(isImageModelName)
-    .map((model) => ({ label: model, value: model }))
+    .map((model) => ({
+      label: model,
+      value: model,
+      editCapable: isEditCapableModel(model),
+    }))
     .sort((a, b) => a.value.localeCompare(b.value));
 };
 
@@ -259,6 +267,14 @@ const ImagePlayground = () => {
     () => models.find((item) => item.value === model),
     [model, models],
   );
+  const canEditSelectedModel = isEditCapableModel(model);
+  const isEditRequest = referenceImages.length > 0;
+
+  useEffect(() => {
+    if (!canEditSelectedModel && referenceImages.length > 0) {
+      setReferenceImages([]);
+    }
+  }, [canEditSelectedModel, referenceImages.length]);
 
   const handleReferenceUpload = async (event) => {
     const files = Array.from(event.target.files || []);
@@ -277,6 +293,7 @@ const ImagePlayground = () => {
         imageFiles.slice(0, 4).map(async (file) => ({
           name: file.name,
           size: file.size,
+          file,
           dataUrl: await fileToDataUrl(file),
         })),
       );
@@ -305,21 +322,9 @@ const ImagePlayground = () => {
       Toast.warning('请输入提示词');
       return;
     }
-
-    const payload = {
-      model,
-      prompt: trimmedPrompt,
-      n,
-      size,
-    };
-    if (quality !== 'auto') {
-      payload.quality = quality;
-    }
-    if (referenceImages.length > 0) {
-      payload.image = referenceImages.map((item) => item.dataUrl);
-    }
-    if (group) {
-      payload.group = group;
+    if (referenceImages.length > 0 && !canEditSelectedModel) {
+      Toast.warning('当前模型不支持参考图改图，请选择 gpt-image 系列模型');
+      return;
     }
 
     const startedAt = performance.now();
@@ -329,10 +334,45 @@ const ImagePlayground = () => {
     setRawResponse(null);
 
     try {
-      const res = await API.post('/pg/images/generations', payload, {
-        timeout: 190000,
-        skipErrorHandler: true,
-      });
+      let res;
+      if (referenceImages.length > 0) {
+        const formData = new FormData();
+        formData.append('model', model);
+        formData.append('prompt', trimmedPrompt);
+        formData.append('n', String(n));
+        formData.append('size', size);
+        if (quality !== 'auto') {
+          formData.append('quality', quality);
+        }
+        if (group) {
+          formData.append('group', group);
+        }
+        const imageFieldName = referenceImages.length > 1 ? 'image[]' : 'image';
+        referenceImages.forEach((item) => {
+          formData.append(imageFieldName, item.file, item.name);
+        });
+        res = await API.post('/pg/images/edits', formData, {
+          timeout: 190000,
+          skipErrorHandler: true,
+        });
+      } else {
+        const payload = {
+          model,
+          prompt: trimmedPrompt,
+          n,
+          size,
+        };
+        if (quality !== 'auto') {
+          payload.quality = quality;
+        }
+        if (group) {
+          payload.group = group;
+        }
+        res = await API.post('/pg/images/generations', payload, {
+          timeout: 190000,
+          skipErrorHandler: true,
+        });
+      }
       const data = res.data || {};
       const nextImages = Array.isArray(data.data) ? data.data : [];
       setRawResponse(data);
@@ -347,6 +387,7 @@ const ImagePlayground = () => {
           prompt: trimmedPrompt,
           size,
           quality,
+          mode: referenceImages.length > 0 ? 'edit' : 'generate',
           images: nextImages,
         };
         setHistory((current) => persistHistory([historyItem, ...current]));
@@ -390,7 +431,7 @@ const ImagePlayground = () => {
               <div>
                 <Text strong>生成参数</Text>
                 <div className='mt-1 text-xs text-gray-500'>
-                  通过 /pg/images/generations 走当前登录用户权限与计费。
+                  支持文本生图；选择 gpt-image 系列模型并上传参考图后会走改图。
                 </div>
               </div>
               {selectedModelMeta?.description ? (
@@ -474,17 +515,31 @@ const ImagePlayground = () => {
                     最多 4 张
                   </Text>
                 </div>
-                <label className='flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-300 bg-cyan-50/70 px-4 py-3 text-sm text-cyan-700 hover:bg-cyan-50'>
+                <label
+                  className={`flex items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-3 text-sm ${
+                    canEditSelectedModel
+                      ? 'cursor-pointer border-cyan-300 bg-cyan-50/70 text-cyan-700 hover:bg-cyan-50'
+                      : 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400'
+                  }`}
+                >
                   <Upload size={16} />
-                  上传参考图片
+                  {canEditSelectedModel
+                    ? '上传参考图片'
+                    : '当前模型不支持参考图改图'}
                   <input
                     type='file'
                     accept='image/*'
                     multiple
                     className='hidden'
+                    disabled={!canEditSelectedModel}
                     onChange={handleReferenceUpload}
                   />
                 </label>
+                {!canEditSelectedModel ? (
+                  <div className='mt-2 text-xs text-gray-500'>
+                    请选择 gpt-image 系列模型启用参考图改图。
+                  </div>
+                ) : null}
                 {referenceImages.length > 0 ? (
                   <div className='mt-3 grid grid-cols-2 gap-3'>
                     {referenceImages.map((item, index) => (
@@ -522,7 +577,7 @@ const ImagePlayground = () => {
                 disabled={!hasModels || loadingModels}
                 onClick={handleGenerate}
               >
-                生成图片
+                {isEditRequest ? '改图生成' : '生成图片'}
               </Button>
             </div>
           </Card>
