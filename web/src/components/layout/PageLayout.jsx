@@ -58,6 +58,7 @@ const PageLayout = () => {
     '/console/midjourney',
     '/console/task',
     '/console/models',
+    '/console/image-playground',
     '/pricing',
   ];
 
@@ -66,7 +67,8 @@ const PageLayout = () => {
   const shouldInnerPadding =
     location.pathname.includes('/console') &&
     !location.pathname.startsWith('/console/chat') &&
-    location.pathname !== '/console/playground';
+    location.pathname !== '/console/playground' &&
+    location.pathname !== '/console/image-playground';
 
   const isConsoleRoute = location.pathname.startsWith('/console');
   const showSider = isConsoleRoute && (!isMobile || drawerOpen);

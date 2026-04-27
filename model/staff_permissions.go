@@ -117,9 +117,10 @@ func CanManageOpsTarget(userRole int, staffRole string, target *User) bool {
 func BuildSidebarPermissionModules(userRole int, staffRole string) map[string]interface{} {
 	modules := map[string]interface{}{
 		"chat": map[string]interface{}{
-			"enabled":    true,
-			"playground": true,
-			"chat":       true,
+			"enabled":          true,
+			"playground":       true,
+			"image_playground": true,
+			"chat":             true,
 		},
 		"console": map[string]interface{}{
 			"enabled":    true,

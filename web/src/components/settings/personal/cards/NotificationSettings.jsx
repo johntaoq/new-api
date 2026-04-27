@@ -71,6 +71,7 @@ const NotificationSettings = ({
       chat: {
         enabled: true,
         playground: true,
+        image_playground: true,
         chat: true,
       },
       console: {
@@ -170,7 +171,7 @@ const NotificationSettings = ({
   const resetSidebarModules = () => {
     setSidebarModulesUser(
       enforceRequiredSidebarConfig({
-        chat: { enabled: true, playground: true, chat: true },
+        chat: { enabled: true, playground: true, image_playground: true, chat: true },
         console: {
           enabled: true,
           detail: true,
@@ -269,6 +270,11 @@ const NotificationSettings = ({
           description: t('AI模型测试环境'),
         },
         { key: 'chat', title: t('聊天'), description: t('聊天会话管理') },
+        {
+          key: 'image_playground',
+          title: 'Image操场',
+          description: '图片生成测试环境',
+        },
       ],
     },
     {
