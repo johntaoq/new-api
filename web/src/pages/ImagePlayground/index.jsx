@@ -22,19 +22,30 @@ import {
   Button,
   Card,
   Empty,
-  Input,
   InputNumber,
   Select,
   Spin,
   Tag,
+  TextArea,
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
-import { Image as ImageIcon, Sparkles, Download, Clock } from 'lucide-react';
+import {
+  Image as ImageIcon,
+  Sparkles,
+  Download,
+  Clock,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import { API } from '../../helpers';
 
 const { Text, Title } = Typography;
 const IMAGE_ENDPOINT_TYPE = 'image-generation';
+const IMAGE_HISTORY_STORAGE_KEY = 'image_playground_history';
+const MAX_HISTORY_ITEMS = 8;
+const MAX_HISTORY_CHARS = 4_000_000;
 
 const sizeOptions = [
   { label: '1024x1024', value: '1024x1024' },
@@ -42,6 +53,15 @@ const sizeOptions = [
   { label: '1536x1024', value: '1536x1024' },
   { label: '1024x1792', value: '1024x1792' },
   { label: '1792x1024', value: '1792x1024' },
+];
+
+const qualityOptions = [
+  { label: 'Auto', value: 'auto' },
+  { label: 'Standard', value: 'standard' },
+  { label: 'HD', value: 'hd' },
+  { label: 'Low', value: 'low' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'High', value: 'high' },
 ];
 
 const imageModelNamePatterns = [
@@ -119,6 +139,37 @@ const downloadImage = (src, index) => {
   link.remove();
 };
 
+const fileToDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+const readHistory = () => {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(IMAGE_HISTORY_STORAGE_KEY) || '[]',
+    );
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistHistory = (items) => {
+  let next = items.slice(0, MAX_HISTORY_ITEMS);
+  while (
+    next.length > 0 &&
+    JSON.stringify(next).length > MAX_HISTORY_CHARS
+  ) {
+    next = next.slice(0, -1);
+  }
+  localStorage.setItem(IMAGE_HISTORY_STORAGE_KEY, JSON.stringify(next));
+  return next;
+};
+
 const ImagePlayground = () => {
   const [models, setModels] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -126,12 +177,15 @@ const ImagePlayground = () => {
   const [group, setGroup] = useState('');
   const [prompt, setPrompt] = useState('');
   const [size, setSize] = useState('1024x1024');
+  const [quality, setQuality] = useState('auto');
   const [n, setN] = useState(1);
+  const [referenceImages, setReferenceImages] = useState([]);
   const [loadingModels, setLoadingModels] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(null);
   const [images, setImages] = useState([]);
   const [rawResponse, setRawResponse] = useState(null);
+  const [history, setHistory] = useState(() => readHistory());
 
   const hasModels = models.length > 0;
 
@@ -206,6 +260,41 @@ const ImagePlayground = () => {
     [model, models],
   );
 
+  const handleReferenceUpload = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length === 0) {
+      return;
+    }
+
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    if (imageFiles.length !== files.length) {
+      Toast.warning('只能上传图片文件');
+    }
+
+    try {
+      const loaded = await Promise.all(
+        imageFiles.slice(0, 4).map(async (file) => ({
+          name: file.name,
+          size: file.size,
+          dataUrl: await fileToDataUrl(file),
+        })),
+      );
+      setReferenceImages((current) => [...current, ...loaded].slice(0, 4));
+    } catch (error) {
+      Toast.error('读取参考图片失败');
+    }
+  };
+
+  const removeReferenceImage = (index) => {
+    setReferenceImages((current) => current.filter((_, i) => i !== index));
+  };
+
+  const clearHistory = () => {
+    localStorage.removeItem(IMAGE_HISTORY_STORAGE_KEY);
+    setHistory([]);
+  };
+
   const handleGenerate = async () => {
     const trimmedPrompt = prompt.trim();
     if (!model) {
@@ -223,6 +312,12 @@ const ImagePlayground = () => {
       n,
       size,
     };
+    if (quality !== 'auto') {
+      payload.quality = quality;
+    }
+    if (referenceImages.length > 0) {
+      payload.image = referenceImages.map((item) => item.dataUrl);
+    }
     if (group) {
       payload.group = group;
     }
@@ -239,9 +334,23 @@ const ImagePlayground = () => {
         skipErrorHandler: true,
       });
       const data = res.data || {};
+      const nextImages = Array.isArray(data.data) ? data.data : [];
       setRawResponse(data);
-      setImages(Array.isArray(data.data) ? data.data : []);
+      setImages(nextImages);
       setElapsedMs(Math.round(performance.now() - startedAt));
+      if (nextImages.length > 0) {
+        const historyItem = {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          createdAt: new Date().toISOString(),
+          model,
+          group,
+          prompt: trimmedPrompt,
+          size,
+          quality,
+          images: nextImages,
+        };
+        setHistory((current) => persistHistory([historyItem, ...current]));
+      }
     } catch (error) {
       const message =
         error.response?.data?.error?.message ||
@@ -327,6 +436,16 @@ const ImagePlayground = () => {
               </div>
 
               <div>
+                <Text className='mb-2 block'>图片质量</Text>
+                <Select
+                  value={quality}
+                  onChange={setQuality}
+                  optionList={qualityOptions}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div>
                 <Text className='mb-2 block'>数量</Text>
                 <InputNumber
                   value={n}
@@ -340,12 +459,58 @@ const ImagePlayground = () => {
 
               <div>
                 <Text className='mb-2 block'>提示词</Text>
-                <Input.TextArea
+                <TextArea
                   value={prompt}
                   onChange={setPrompt}
                   autosize={{ minRows: 7, maxRows: 12 }}
                   placeholder='例如：A precise product render of a translucent glass cube on brushed steel, studio lighting'
                 />
+              </div>
+
+              <div>
+                <div className='mb-2 flex items-center justify-between'>
+                  <Text>参考图片素材</Text>
+                  <Text type='tertiary' size='small'>
+                    最多 4 张
+                  </Text>
+                </div>
+                <label className='flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-300 bg-cyan-50/70 px-4 py-3 text-sm text-cyan-700 hover:bg-cyan-50'>
+                  <Upload size={16} />
+                  上传参考图片
+                  <input
+                    type='file'
+                    accept='image/*'
+                    multiple
+                    className='hidden'
+                    onChange={handleReferenceUpload}
+                  />
+                </label>
+                {referenceImages.length > 0 ? (
+                  <div className='mt-3 grid grid-cols-2 gap-3'>
+                    {referenceImages.map((item, index) => (
+                      <div
+                        key={`${item.name}-${index}`}
+                        className='relative overflow-hidden rounded-xl border border-gray-100 bg-white'
+                      >
+                        <img
+                          src={item.dataUrl}
+                          alt={item.name}
+                          className='aspect-square w-full object-cover'
+                        />
+                        <button
+                          type='button'
+                          className='absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white'
+                          onClick={() => removeReferenceImage(index)}
+                        >
+                          <X size={14} />
+                        </button>
+                        <div className='truncate px-2 py-1 text-xs text-gray-500'>
+                          {item.name}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               <Button
@@ -447,6 +612,84 @@ const ImagePlayground = () => {
                 </pre>
               </details>
             ) : null}
+
+            <div className='mt-6 rounded-2xl border border-gray-100 bg-white/80 p-4'>
+              <div className='mb-3 flex items-center justify-between gap-3'>
+                <div>
+                  <Text strong>本地生成历史</Text>
+                  <div className='mt-1 text-xs text-gray-500'>
+                    仅缓存在当前浏览器，最多保留 {MAX_HISTORY_ITEMS} 条。
+                  </div>
+                </div>
+                <Button
+                  size='small'
+                  type='danger'
+                  theme='borderless'
+                  icon={<Trash2 size={14} />}
+                  disabled={history.length === 0}
+                  onClick={clearHistory}
+                >
+                  清空
+                </Button>
+              </div>
+
+              {history.length === 0 ? (
+                <div className='rounded-xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-500'>
+                  暂无本地缓存记录
+                </div>
+              ) : (
+                <div className='flex flex-col gap-3'>
+                  {history.map((item) => (
+                    <div
+                      key={item.id}
+                      className='rounded-xl border border-gray-100 bg-white p-3'
+                    >
+                      <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
+                        <div className='flex flex-wrap items-center gap-2'>
+                          <Tag color='cyan'>{item.model}</Tag>
+                          <Tag>{item.size}</Tag>
+                          {item.quality && item.quality !== 'auto' ? (
+                            <Tag>{item.quality}</Tag>
+                          ) : null}
+                        </div>
+                        <Text type='tertiary' size='small'>
+                          {new Date(item.createdAt).toLocaleString()}
+                        </Text>
+                      </div>
+                      <div className='mb-3 line-clamp-2 text-sm text-gray-600'>
+                        {item.prompt}
+                      </div>
+                      <div className='grid grid-cols-3 gap-2 md:grid-cols-4'>
+                        {(item.images || []).map((image, index) => {
+                          const src = getImageSource(image);
+                          return (
+                            <button
+                              key={`${item.id}-${index}`}
+                              type='button'
+                              className='overflow-hidden rounded-lg border border-gray-100 bg-gray-50'
+                              onClick={() => src && downloadImage(src, index)}
+                              title='点击下载'
+                            >
+                              {src ? (
+                                <img
+                                  src={src}
+                                  alt={`History ${index + 1}`}
+                                  className='aspect-square w-full object-cover'
+                                />
+                              ) : (
+                                <div className='flex aspect-square items-center justify-center text-xs text-gray-400'>
+                                  无图
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </Card>
         </div>
       </div>
