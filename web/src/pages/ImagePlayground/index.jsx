@@ -23,6 +23,7 @@ import {
   Card,
   Empty,
   InputNumber,
+  Modal,
   Select,
   Spin,
   Tag,
@@ -39,6 +40,9 @@ import {
   Trash2,
   Upload,
   X,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
 } from 'lucide-react';
 import { API } from '../../helpers';
 
@@ -263,6 +267,12 @@ const ImagePlayground = () => {
   const [images, setImages] = useState([]);
   const [rawResponse, setRawResponse] = useState(null);
   const [history, setHistory] = useState(() => readHistory());
+  const [preview, setPreview] = useState({
+    visible: false,
+    src: '',
+    title: '',
+    scale: 1,
+  });
 
   const hasModels = models.length > 0;
 
@@ -404,6 +414,36 @@ const ImagePlayground = () => {
   const clearHistory = () => {
     localStorage.removeItem(IMAGE_HISTORY_STORAGE_KEY);
     setHistory([]);
+  };
+
+  const openPreview = (src, title) => {
+    if (!src) {
+      return;
+    }
+    setPreview({
+      visible: true,
+      src,
+      title,
+      scale: 1,
+    });
+  };
+
+  const closePreview = () => {
+    setPreview((current) => ({ ...current, visible: false }));
+  };
+
+  const updatePreviewScale = (delta) => {
+    setPreview((current) => ({
+      ...current,
+      scale: Math.min(
+        4,
+        Math.max(0.25, Number((current.scale + delta).toFixed(2))),
+      ),
+    }));
+  };
+
+  const resetPreviewScale = () => {
+    setPreview((current) => ({ ...current, scale: 1 }));
   };
 
   const handleGenerate = async () => {
@@ -741,11 +781,23 @@ const ImagePlayground = () => {
                         className='overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm'
                       >
                         {src ? (
-                          <img
-                            src={src}
-                            alt={`Generated ${index + 1}`}
-                            className='aspect-square w-full object-cover'
-                          />
+                          <button
+                            type='button'
+                            className='group relative block w-full cursor-zoom-in overflow-hidden'
+                            onClick={() =>
+                              openPreview(src, `生成图片 #${index + 1}`)
+                            }
+                            title='点击预览'
+                          >
+                            <img
+                              src={src}
+                              alt={`Generated ${index + 1}`}
+                              className='aspect-square w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]'
+                            />
+                            <span className='absolute inset-x-0 bottom-0 bg-black/55 px-3 py-2 text-left text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100'>
+                              点击预览
+                            </span>
+                          </button>
                         ) : (
                           <div className='flex aspect-square items-center justify-center bg-gray-50 text-gray-400'>
                             无法展示该返回项
@@ -840,16 +892,24 @@ const ImagePlayground = () => {
                             <button
                               key={`${item.id}-${index}`}
                               type='button'
-                              className='overflow-hidden rounded-lg border border-gray-100 bg-gray-50'
-                              onClick={() => src && downloadImage(src, index)}
-                              title='点击下载'
+                              className='group relative overflow-hidden rounded-lg border border-gray-100 bg-gray-50'
+                              onClick={() =>
+                                src &&
+                                openPreview(src, `历史图片 #${index + 1}`)
+                              }
+                              title='点击预览'
                             >
                               {src ? (
-                                <img
-                                  src={src}
-                                  alt={`History ${index + 1}`}
-                                  className='aspect-square w-full object-cover'
-                                />
+                                <>
+                                  <img
+                                    src={src}
+                                    alt={`History ${index + 1}`}
+                                    className='aspect-square w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]'
+                                  />
+                                  <span className='absolute inset-x-0 bottom-0 bg-black/55 px-2 py-1 text-left text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100'>
+                                    预览
+                                  </span>
+                                </>
                               ) : (
                                 <div className='flex aspect-square items-center justify-center text-xs text-gray-400'>
                                   无图
@@ -867,6 +927,71 @@ const ImagePlayground = () => {
           </Card>
         </div>
       </div>
+      <Modal
+        visible={preview.visible}
+        title={preview.title || '图片预览'}
+        onCancel={closePreview}
+        footer={null}
+        width='min(96vw, 1180px)'
+        bodyStyle={{ padding: 0 }}
+        keepDOM={false}
+      >
+        <div className='flex max-h-[82vh] flex-col bg-slate-950'>
+          <div className='flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3 text-white'>
+            <div className='text-sm font-semibold'>
+              缩放 {(preview.scale * 100).toFixed(0)}%
+            </div>
+            <div className='flex flex-wrap items-center gap-2'>
+              <Button
+                size='small'
+                icon={<ZoomOut size={14} />}
+                onClick={() => updatePreviewScale(-0.25)}
+              >
+                缩小
+              </Button>
+              <Button
+                size='small'
+                icon={<RotateCcw size={14} />}
+                onClick={resetPreviewScale}
+              >
+                重置
+              </Button>
+              <Button
+                size='small'
+                icon={<ZoomIn size={14} />}
+                onClick={() => updatePreviewScale(0.25)}
+              >
+                放大
+              </Button>
+              <Button
+                size='small'
+                type='primary'
+                icon={<Download size={14} />}
+                onClick={() => downloadImage(preview.src, 0)}
+              >
+                下载
+              </Button>
+            </div>
+          </div>
+          <div className='flex-1 overflow-auto p-5'>
+            {preview.src ? (
+              <div className='flex min-h-[58vh] min-w-full items-center justify-center'>
+                <img
+                  src={preview.src}
+                  alt={preview.title || '图片预览'}
+                  className='max-w-none select-none rounded-lg bg-white shadow-2xl'
+                  style={{
+                    width: `${preview.scale * 100}%`,
+                    maxWidth: 'none',
+                    maxHeight: preview.scale <= 1 ? '72vh' : 'none',
+                    transition: 'width 120ms ease-out',
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
