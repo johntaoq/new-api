@@ -31,6 +31,7 @@ import {
   Typography,
 } from '@douyinfe/semi-ui';
 import {
+  AlertTriangle,
   Image as ImageIcon,
   Sparkles,
   Download,
@@ -453,8 +454,14 @@ const ImagePlayground = () => {
                   style={{ width: '100%' }}
                 />
                 {canEditSelectedModel ? (
-                  <div className='mt-2 text-sm font-medium text-red-600'>
-                    GPT生图需要超过5分钟，不要离开，离开后如果后台生图成功依然扣费，会导致账户扣费，不退款
+                  <div className='mt-3 rounded-2xl border-2 border-red-500 bg-red-50 px-4 py-3 text-red-700 shadow-sm shadow-red-100'>
+                    <div className='mb-1 flex items-center gap-2 text-base font-extrabold'>
+                      <AlertTriangle size={18} strokeWidth={2.6} />
+                      GPT 生图扣费提醒
+                    </div>
+                    <div className='text-sm font-bold leading-6'>
+                      GPT生图需要超过5分钟，请不要离开页面。离开后如果后台生图成功依然会扣费，账户扣费不退款。
+                    </div>
                   </div>
                 ) : null}
               </div>
