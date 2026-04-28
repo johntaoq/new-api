@@ -20,6 +20,7 @@ const (
 
 	FinancialAuditTargetRedemption      = "redemption"
 	FinancialAuditTargetRedemptionBatch = "redemption_batch"
+	FinancialAuditTargetCardIssue       = "card_issue"
 	FinancialAuditTargetUserWallet      = "user_wallet"
 )
 

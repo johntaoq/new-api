@@ -288,6 +288,10 @@ func SetApiRouter(router *gin.Engine) {
 			redemptionRoute.DELETE("/invalid", middleware.RequirePermission("finance.write"), controller.DeleteInvalidRedemption)
 			redemptionRoute.DELETE("/:id", middleware.RequirePermission("finance.write"), controller.DeleteRedemption)
 		}
+		cardIssuerRoute := apiRouter.Group("/card-issuer")
+		{
+			cardIssuerRoute.POST("/claim", middleware.RequirePermission("finance.write"), controller.ClaimCardIssue)
+		}
 		logRoute := apiRouter.Group("/log")
 		logRoute.GET("/", middleware.RequirePermission("ops.manage"), controller.GetAllLogs)
 		logRoute.DELETE("/", middleware.RequirePermission("ops.manage"), controller.DeleteHistoryLogs)
