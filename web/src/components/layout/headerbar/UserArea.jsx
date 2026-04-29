@@ -20,7 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Avatar, Button, Dropdown, Typography } from '@douyinfe/semi-ui';
-import { ChevronDown, ExternalLink } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import {
   IconExit,
   IconUserSetting,
@@ -28,10 +28,6 @@ import {
   IconKey,
 } from '@douyinfe/semi-icons';
 import { stringToColor } from '../../../helpers';
-import {
-  buildStudioLaunchUrl,
-  openStudioLaunchUrl,
-} from '../../../helpers/studio';
 import SkeletonWrapper from '../components/SkeletonWrapper';
 
 const UserArea = ({
@@ -56,10 +52,6 @@ const UserArea = ({
   }
 
   if (userState.user) {
-    const studioLaunchUrl = userState.user.id
-      ? buildStudioLaunchUrl(userState.user.id)
-      : null;
-
     return (
       <div className='relative' ref={dropdownRef}>
         <Dropdown
@@ -109,22 +101,6 @@ const UserArea = ({
                   <span>{t('钱包管理')}</span>
                 </div>
               </Dropdown.Item>
-              {studioLaunchUrl && (
-                <Dropdown.Item
-                  onClick={() => {
-                    openStudioLaunchUrl(userState.user.id);
-                  }}
-                  className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-blue-500 dark:hover:!text-white'
-                >
-                  <div className='flex items-center gap-2'>
-                    <ExternalLink
-                      size={14}
-                      className='text-gray-500 dark:text-gray-400'
-                    />
-                    <span>AI STUDIO</span>
-                  </div>
-                </Dropdown.Item>
-              )}
               <Dropdown.Item
                 onClick={logout}
                 className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-red-500 dark:hover:!text-white'
