@@ -76,9 +76,7 @@ const maiImageSizeOptions = [
   { label: '768x1365', value: '768x1365' },
 ];
 
-const defaultSizeOptions = [
-  { label: '1024x1024', value: '1024x1024' },
-];
+const defaultSizeOptions = [{ label: '1024x1024', value: '1024x1024' }];
 
 const gptImageQualityOptions = [
   { label: '默认', value: 'auto' },
@@ -241,10 +239,7 @@ const readHistory = () => {
 
 const persistHistory = (items) => {
   let next = items.slice(0, MAX_HISTORY_ITEMS);
-  while (
-    next.length > 0 &&
-    JSON.stringify(next).length > MAX_HISTORY_CHARS
-  ) {
+  while (next.length > 0 && JSON.stringify(next).length > MAX_HISTORY_CHARS) {
     next = next.slice(0, -1);
   }
   localStorage.setItem(IMAGE_HISTORY_STORAGE_KEY, JSON.stringify(next));
@@ -592,7 +587,7 @@ const ImagePlayground = () => {
   };
 
   return (
-    <div className='min-h-full bg-gradient-to-br from-slate-50 via-white to-cyan-50 p-4 md:p-8'>
+    <div className='min-h-full bg-gradient-to-br from-slate-50 via-white to-cyan-50 px-4 pb-4 pt-20 md:px-8 md:pb-8 md:pt-24'>
       <div className='mx-auto flex max-w-7xl flex-col gap-5'>
         <div className='flex flex-col gap-2'>
           <div className='flex items-center gap-3'>
@@ -603,9 +598,6 @@ const ImagePlayground = () => {
               <Title heading={3} className='!m-0'>
                 图片生成
               </Title>
-              <Text type='tertiary'>
-                直接调用图片生成接口，模型列表只展示图片生成模型。
-              </Text>
             </div>
           </div>
         </div>
@@ -925,7 +917,7 @@ const ImagePlayground = () => {
                       <div className='mb-3 line-clamp-2 text-sm text-gray-600'>
                         {item.prompt}
                       </div>
-                      <div className='grid grid-cols-3 gap-2 md:grid-cols-4'>
+                      <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
                         {(item.images || []).map((image, index) => {
                           const src = getImageSource(image);
                           return (

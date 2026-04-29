@@ -1,12 +1,15 @@
 package controller
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +20,62 @@ func Playground(c *gin.Context) {
 }
 
 func PlaygroundImage(c *gin.Context) {
+	originalWriter := c.Writer
+	captureWriter := &playgroundImageResponseWriter{
+		ResponseWriter: originalWriter,
+		statusCode:     http.StatusOK,
+	}
+	c.Writer = captureWriter
+	defer func() {
+		c.Writer = originalWriter
+	}()
+
 	playgroundRelay(c, types.RelayFormatOpenAIImage)
+
+	responseBody := captureWriter.body.Bytes()
+	if captureWriter.statusCode >= http.StatusOK && captureWriter.statusCode < http.StatusMultipleChoices {
+		responseBody = service.ArchivePlaygroundImageResponse(c, responseBody)
+	}
+
+	originalWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(responseBody)))
+	originalWriter.WriteHeader(captureWriter.statusCode)
+	_, _ = originalWriter.Write(responseBody)
+}
+
+type playgroundImageResponseWriter struct {
+	gin.ResponseWriter
+	body       bytes.Buffer
+	statusCode int
+}
+
+func (w *playgroundImageResponseWriter) WriteHeader(code int) {
+	w.statusCode = code
+}
+
+func (w *playgroundImageResponseWriter) WriteHeaderNow() {
+}
+
+func (w *playgroundImageResponseWriter) Write(data []byte) (int, error) {
+	return w.body.Write(data)
+}
+
+func (w *playgroundImageResponseWriter) WriteString(data string) (int, error) {
+	return w.body.WriteString(data)
+}
+
+func (w *playgroundImageResponseWriter) Status() int {
+	return w.statusCode
+}
+
+func (w *playgroundImageResponseWriter) Size() int {
+	return w.body.Len()
+}
+
+func (w *playgroundImageResponseWriter) Written() bool {
+	return w.body.Len() > 0
+}
+
+func (w *playgroundImageResponseWriter) Flush() {
 }
 
 func playgroundRelay(c *gin.Context, relayFormat types.RelayFormat) {

@@ -1,0 +1,9 @@
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY new-api-linux-local /new-api
+
+EXPOSE 3000
+WORKDIR /data
+ENTRYPOINT ["/new-api"]
