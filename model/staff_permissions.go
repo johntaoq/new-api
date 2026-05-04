@@ -118,6 +118,7 @@ func BuildSidebarPermissionModules(userRole int, staffRole string) map[string]in
 	modules := map[string]interface{}{
 		"chat": map[string]interface{}{
 			"enabled":          true,
+			"ai_studio":        true,
 			"playground":       true,
 			"image_playground": true,
 			"chat":             true,

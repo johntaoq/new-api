@@ -207,6 +207,7 @@ type RecordTaskBillingLogParams struct {
 	ChannelId int
 	ModelName string
 	Quota     int
+	TokenName string
 	TokenId   int
 	Group     string
 	Other     map[string]interface{}
@@ -217,8 +218,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		return
 	}
 	username, _ := GetUsernameById(params.UserId, false)
-	tokenName := ""
-	if params.TokenId > 0 {
+	tokenName := params.TokenName
+	if tokenName == "" && params.TokenId > 0 {
 		if token, err := GetTokenById(params.TokenId); err == nil {
 			tokenName = token.Name
 		}

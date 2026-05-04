@@ -40,6 +40,7 @@ import {
   Trash2,
   Upload,
   X,
+  AtSign,
   ZoomIn,
   ZoomOut,
   RotateCcw,
@@ -115,6 +116,7 @@ const getImageModelProfile = (modelName = '') => {
       supportsQuality: false,
       supportsN: false,
       requestShape: 'width-height',
+      maxReferenceImages: 0,
     };
   }
   if (normalized.includes('gpt-image-2')) {
@@ -125,6 +127,7 @@ const getImageModelProfile = (modelName = '') => {
       supportsQuality: true,
       supportsN: true,
       requestShape: 'size',
+      maxReferenceImages: 16,
     };
   }
   if (normalized.includes('gpt-image')) {
@@ -135,6 +138,7 @@ const getImageModelProfile = (modelName = '') => {
       supportsQuality: true,
       supportsN: true,
       requestShape: 'size',
+      maxReferenceImages: 16,
     };
   }
   return {
@@ -144,6 +148,7 @@ const getImageModelProfile = (modelName = '') => {
     supportsQuality: false,
     supportsN: true,
     requestShape: 'size',
+    maxReferenceImages: 0,
   };
 };
 
@@ -225,6 +230,33 @@ const fileToDataUrl = (file) =>
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+
+const normalizeReferenceFileName = (name = 'referenced-image') => {
+  const cleanName =
+    String(name)
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'referenced-image';
+  return `${cleanName}.png`;
+};
+
+const imageSourceToReferenceImage = async (src, name) => {
+  const response = await fetch(src);
+  if (!response.ok) {
+    throw new Error('Failed to load image source');
+  }
+  const blob = await response.blob();
+  const fileName = normalizeReferenceFileName(name);
+  const file = new File([blob], fileName, {
+    type: blob.type || 'image/png',
+  });
+  return {
+    name: fileName,
+    size: file.size,
+    file,
+    dataUrl: await fileToDataUrl(file),
+  };
+};
 
 const readHistory = () => {
   try {
@@ -347,7 +379,9 @@ const ImagePlayground = () => {
     () => getImageModelProfile(model),
     [model],
   );
-  const canEditSelectedModel = isEditCapableModel(model);
+  const maxReferenceImages = selectedModelProfile.maxReferenceImages || 0;
+  const canEditSelectedModel =
+    maxReferenceImages > 0 && isEditCapableModel(model);
   const isEditRequest = referenceImages.length > 0;
 
   useEffect(() => {
@@ -374,8 +408,12 @@ const ImagePlayground = () => {
   useEffect(() => {
     if (!canEditSelectedModel && referenceImages.length > 0) {
       setReferenceImages([]);
+      return;
     }
-  }, [canEditSelectedModel, referenceImages.length]);
+    if (canEditSelectedModel && referenceImages.length > maxReferenceImages) {
+      setReferenceImages((current) => current.slice(0, maxReferenceImages));
+    }
+  }, [canEditSelectedModel, maxReferenceImages, referenceImages.length]);
 
   const handleReferenceUpload = async (event) => {
     const files = Array.from(event.target.files || []);
@@ -383,24 +421,65 @@ const ImagePlayground = () => {
     if (files.length === 0) {
       return;
     }
+    if (!canEditSelectedModel || maxReferenceImages <= 0) {
+      Toast.warning('当前模型不支持参考图改图');
+      return;
+    }
 
     const imageFiles = files.filter((file) => file.type.startsWith('image/'));
     if (imageFiles.length !== files.length) {
       Toast.warning('只能上传图片文件');
     }
+    const remainingSlots = maxReferenceImages - referenceImages.length;
+    if (remainingSlots <= 0) {
+      Toast.warning(`参考图最多 ${maxReferenceImages} 张`);
+      return;
+    }
+    if (imageFiles.length > remainingSlots) {
+      Toast.warning(`已按模型限制保留前 ${remainingSlots} 张参考图`);
+    }
 
     try {
       const loaded = await Promise.all(
-        imageFiles.slice(0, 4).map(async (file) => ({
+        imageFiles.slice(0, remainingSlots).map(async (file) => ({
           name: file.name,
           size: file.size,
           file,
           dataUrl: await fileToDataUrl(file),
         })),
       );
-      setReferenceImages((current) => [...current, ...loaded].slice(0, 4));
+      setReferenceImages((current) =>
+        [...current, ...loaded].slice(0, maxReferenceImages),
+      );
     } catch (error) {
       Toast.error('读取参考图片失败');
+    }
+  };
+
+  const addReferenceImageFromSource = async (src, name) => {
+    if (!src) {
+      return;
+    }
+    if (!canEditSelectedModel || maxReferenceImages <= 0) {
+      Toast.warning('当前模型不支持参考图改图，请切换到 gpt-image 系列模型');
+      return;
+    }
+    if (referenceImages.length >= maxReferenceImages) {
+      Toast.warning(`参考图最多 ${maxReferenceImages} 张`);
+      return;
+    }
+
+    try {
+      const referenceImage = await imageSourceToReferenceImage(src, name);
+      setReferenceImages((current) => {
+        if (current.length >= maxReferenceImages) {
+          return current;
+        }
+        return [...current, referenceImage].slice(0, maxReferenceImages);
+      });
+      Toast.success('已加入参考图');
+    } catch (error) {
+      Toast.error('无法引用该图片，请下载后手动上传');
     }
   };
 
@@ -411,6 +490,26 @@ const ImagePlayground = () => {
   const clearHistory = () => {
     localStorage.removeItem(IMAGE_HISTORY_STORAGE_KEY);
     setHistory([]);
+  };
+
+  const deleteHistoryImage = (historyId, imageIndex) => {
+    setHistory((current) => {
+      const next = current.reduce((items, item) => {
+        if (item.id !== historyId) {
+          items.push(item);
+          return items;
+        }
+
+        const nextImages = (item.images || []).filter(
+          (_, index) => index !== imageIndex,
+        );
+        if (nextImages.length > 0) {
+          items.push({ ...item, images: nextImages });
+        }
+        return items;
+      }, []);
+      return persistHistory(next);
+    });
   };
 
   const openPreview = (src, title) => {
@@ -701,7 +800,9 @@ const ImagePlayground = () => {
                 <div className='mb-2 flex items-center justify-between'>
                   <Text>参考图片素材</Text>
                   <Text type='tertiary' size='small'>
-                    最多 4 张
+                    {canEditSelectedModel
+                      ? `最多 ${maxReferenceImages} 张`
+                      : '当前模型不支持'}
                   </Text>
                 </div>
                 <label
@@ -839,14 +940,29 @@ const ImagePlayground = () => {
                           <Text type='tertiary' size='small'>
                             #{index + 1}
                           </Text>
-                          <Button
-                            size='small'
-                            icon={<Download size={14} />}
-                            disabled={!src}
-                            onClick={() => downloadImage(src, index)}
-                          >
-                            下载
-                          </Button>
+                          <div className='flex items-center gap-2'>
+                            <Button
+                              size='small'
+                              icon={<AtSign size={14} />}
+                              disabled={!src || !canEditSelectedModel}
+                              onClick={() =>
+                                addReferenceImageFromSource(
+                                  src,
+                                  `generated-${index + 1}`,
+                                )
+                              }
+                            >
+                              引用
+                            </Button>
+                            <Button
+                              size='small'
+                              icon={<Download size={14} />}
+                              disabled={!src}
+                              onClick={() => downloadImage(src, index)}
+                            >
+                              下载
+                            </Button>
+                          </div>
                         </div>
                         {item.revised_prompt ? (
                           <div className='border-t border-gray-100 p-3 text-xs text-gray-500'>
@@ -921,33 +1037,61 @@ const ImagePlayground = () => {
                         {(item.images || []).map((image, index) => {
                           const src = getImageSource(image);
                           return (
-                            <button
+                            <div
                               key={`${item.id}-${index}`}
-                              type='button'
                               className='group relative overflow-hidden rounded-lg border border-gray-100 bg-gray-50'
-                              onClick={() =>
-                                src &&
-                                openPreview(src, `历史图片 #${index + 1}`)
-                              }
-                              title='点击预览'
                             >
                               {src ? (
                                 <>
-                                  <img
-                                    src={src}
-                                    alt={`History ${index + 1}`}
-                                    className='aspect-square w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]'
-                                  />
-                                  <span className='absolute inset-x-0 bottom-0 bg-black/55 px-2 py-1 text-left text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100'>
-                                    预览
-                                  </span>
+                                  <button
+                                    type='button'
+                                    className='block w-full cursor-zoom-in'
+                                    onClick={() =>
+                                      openPreview(src, `历史图片 #${index + 1}`)
+                                    }
+                                    title='点击预览'
+                                  >
+                                    <img
+                                      src={src}
+                                      alt={`History ${index + 1}`}
+                                      className='aspect-square w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]'
+                                    />
+                                  </button>
+                                  <div className='absolute inset-x-1 bottom-1 flex items-center justify-between gap-1 opacity-0 transition-opacity group-hover:opacity-100'>
+                                    <button
+                                      type='button'
+                                      title='引用为改图参考'
+                                      aria-label='引用为改图参考'
+                                      className='rounded-full bg-cyan-600/90 p-1.5 text-white shadow-sm disabled:cursor-not-allowed disabled:bg-gray-500/70'
+                                      disabled={!canEditSelectedModel}
+                                      onClick={() =>
+                                        addReferenceImageFromSource(
+                                          src,
+                                          `history-${index + 1}`,
+                                        )
+                                      }
+                                    >
+                                      <AtSign size={13} />
+                                    </button>
+                                    <button
+                                      type='button'
+                                      title='删除这张历史图片'
+                                      aria-label='删除这张历史图片'
+                                      className='rounded-full bg-black/70 p-1.5 text-white shadow-sm hover:bg-red-600'
+                                      onClick={() =>
+                                        deleteHistoryImage(item.id, index)
+                                      }
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
                                 </>
                               ) : (
                                 <div className='flex aspect-square items-center justify-center text-xs text-gray-400'>
                                   无图
                                 </div>
                               )}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
@@ -994,6 +1138,19 @@ const ImagePlayground = () => {
                 onClick={() => updatePreviewScale(0.25)}
               >
                 放大
+              </Button>
+              <Button
+                size='small'
+                icon={<AtSign size={14} />}
+                disabled={!preview.src || !canEditSelectedModel}
+                onClick={() =>
+                  addReferenceImageFromSource(
+                    preview.src,
+                    preview.title || 'preview-image',
+                  )
+                }
+              >
+                引用
               </Button>
               <Button
                 size='small'

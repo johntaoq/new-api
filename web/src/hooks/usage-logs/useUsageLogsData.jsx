@@ -44,6 +44,29 @@ import ParamOverrideEntry from '../../components/table/usage-logs/components/Par
 export const useLogsData = () => {
   const { t } = useTranslation();
 
+  const isAiStudioImageLog = (log, other) =>
+    other?.source === 'ai_studio' ||
+    log?.content?.startsWith?.('AI Studio image generation:');
+
+  const renderAiStudioImageBilling = (log, other) => {
+    const quota = Number(other?.final_cost ?? other?.estimated_cost ?? log?.quota ?? 0);
+    const modelPrice = Number(other?.model_price);
+    const parts = [
+      t('AI Studio 图片生成按任务扣费'),
+      `${t('模型')} ${log?.model_name || '-'}`,
+      `${t('尺寸')} ${other?.size || '-'}`,
+      `${t('质量')} ${other?.quality || '-'}`,
+      `${t('数量')} ${other?.n || 1}`,
+      `${t('实际扣费')} ${renderQuota(Number.isFinite(quota) ? quota : 0, 6)}`,
+    ];
+
+    if (Number.isFinite(modelPrice) && modelPrice > 0) {
+      parts.splice(1, 0, `${t('单价')} $${modelPrice.toFixed(6)} / ${t('次')}`);
+    }
+
+    return parts.join('，');
+  };
+
   // Define column keys for selection
   const COLUMN_KEYS = {
     TIME: 'time',
@@ -424,9 +447,12 @@ export const useLogsData = () => {
         });
       }
       if (logs[i].type === 2) {
+        const aiStudioImageLog = isAiStudioImageLog(logs[i], other);
         expandDataLocal.push({
           key: t('日志详情'),
-          value: other?.claude
+          value: aiStudioImageLog
+            ? renderAiStudioImageBilling(logs[i], other)
+            : other?.claude
             ? renderClaudeLogContent(
                 other?.model_ratio,
                 other.completion_ratio,
@@ -497,7 +523,9 @@ export const useLogsData = () => {
 
         let content = '';
         if (!isViolationFeeLog) {
-          if (other?.ws || other?.audio) {
+          if (isAiStudioImageLog(logs[i], other)) {
+            content = renderAiStudioImageBilling(logs[i], other);
+          } else if (other?.ws || other?.audio) {
             content = renderAudioModelPrice(
               other?.text_input,
               other?.text_output,

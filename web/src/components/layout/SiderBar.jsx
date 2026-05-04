@@ -26,6 +26,8 @@ import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import { useSidebar } from '../../hooks/common/useSidebar';
 import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime';
 import {
+  API,
+  authHeader,
   hasAnyPermission,
   hasPermission,
   showError,
@@ -54,6 +56,7 @@ const routerMap = {
   deployment: '/console/deployment',
   playground: '/console/playground',
   image_playground: '/console/image-playground',
+  ai_studio: '/api/studio/open',
   personal: '/console/personal',
 };
 
@@ -223,8 +226,53 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     return filteredItems;
   }, [canManageOps, canManageSystem, canViewFinance, canWriteFinance, t, isModuleVisible]);
 
+  const openAIStudio = async () => {
+    const studioWindow = window.open('about:blank', '_blank');
+    if (studioWindow) {
+      studioWindow.opener = null;
+    }
+
+    try {
+      const res = await API.get('/api/studio/open', {
+        params: { format: 'json' },
+        headers: {
+          ...authHeader(),
+          Accept: 'application/json',
+        },
+        skipErrorHandler: true,
+      });
+
+      const { success, message, data } = res.data || {};
+      const targetUrl = data?.url;
+
+      if (!success || !targetUrl) {
+        if (studioWindow) {
+          studioWindow.close();
+        }
+        showError(message || '打开 AI STUDIO 失败');
+        return;
+      }
+
+      if (studioWindow) {
+        studioWindow.location.replace(targetUrl);
+      } else {
+        window.open(targetUrl, '_blank');
+      }
+    } catch (error) {
+      if (studioWindow) {
+        studioWindow.close();
+      }
+      showError(error?.response?.data?.message || error?.message || '打开 AI STUDIO 失败');
+    }
+  };
+
   const chatMenuItems = useMemo(() => {
     const items = [
+      {
+        text: 'AI STUDIO',
+        itemKey: 'ai_studio',
+        to: '/api/studio/open',
+      },
       {
         text: t('操练场'),
         itemKey: 'playground',
@@ -442,7 +490,37 @@ const SiderBar = ({ onNavigate = () => {} }) => {
               routerMapState[props.itemKey] || routerMap[props.itemKey];
 
             // 如果没有路由，直接返回元素
-            if (!to) return itemElement;
+             if (!to) return itemElement;
+
+             if (props.itemKey === 'ai_studio') {
+               return (
+                 <a
+                   style={{ textDecoration: 'none' }}
+                   href={to}
+                   onClick={(event) => {
+                     event.preventDefault();
+                     onNavigate();
+                     openAIStudio();
+                   }}
+                 >
+                   {itemElement}
+                 </a>
+               );
+             }
+
+             if (to.startsWith('/api/')) {
+               return (
+                 <a
+                  style={{ textDecoration: 'none' }}
+                  href={to}
+                  target='_blank'
+                  rel='noreferrer'
+                  onClick={onNavigate}
+                >
+                  {itemElement}
+                </a>
+              );
+            }
 
             return (
               <Link

@@ -47,6 +47,7 @@ func GetStatus(c *gin.Context) {
 
 	passkeySetting := system_setting.GetPasskeySettings()
 	legalSetting := system_setting.GetLegalSettings()
+	sidebarModulesAdmin := withAIStudioSidebarModule(common.OptionMap["SidebarModulesAdmin"])
 
 	data := gin.H{
 		"version":                     common.Version,
@@ -101,7 +102,7 @@ func GetStatus(c *gin.Context) {
 
 		// 模块管理配置
 		"HeaderNavModules":    common.OptionMap["HeaderNavModules"],
-		"SidebarModulesAdmin": common.OptionMap["SidebarModulesAdmin"],
+		"SidebarModulesAdmin": sidebarModulesAdmin,
 
 		"oidc_enabled":                system_setting.GetOIDCSettings().Enabled,
 		"oidc_client_id":              system_setting.GetOIDCSettings().ClientId,
@@ -164,6 +165,29 @@ func GetStatus(c *gin.Context) {
 		"data":    data,
 	})
 	return
+}
+
+func withAIStudioSidebarModule(value string) string {
+	var modules map[string]interface{}
+	if err := json.Unmarshal([]byte(value), &modules); err != nil {
+		return value
+	}
+
+	chat, ok := modules["chat"].(map[string]interface{})
+	if !ok {
+		chat = map[string]interface{}{}
+		modules["chat"] = chat
+	}
+	if _, exists := chat["enabled"]; !exists {
+		chat["enabled"] = true
+	}
+	chat["ai_studio"] = true
+
+	data, err := json.Marshal(modules)
+	if err != nil {
+		return value
+	}
+	return string(data)
 }
 
 func GetNotice(c *gin.Context) {
