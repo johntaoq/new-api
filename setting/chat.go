@@ -29,7 +29,7 @@ var Chats = []map[string]string{
 		"AI as Workspace": "https://aiaw.app/set-provider?provider={\"type\":\"openai\",\"settings\":{\"apiKey\":\"{key}\",\"baseURL\":\"{address}/v1\",\"compatibility\":\"strict\"}}",
 	},
 	{
-		"Open WebUI": "https://studio.unikeyx.com/?new_api_config={openWebUIConfig}",
+		"Open WebUI": "http://www.unikeyx.com:7000/?new_api_config={openWebUIConfig}",
 	},
 	{
 		"AMA 问天": "ama://set-api-key?server={address}&key={key}",
