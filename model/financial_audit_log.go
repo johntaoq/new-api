@@ -231,7 +231,7 @@ func UpdateRedemptionWithAudit(payload Redemption, statusOnly bool, operator Fin
 	var updated Redemption
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		current := &Redemption{}
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", payload.Id).First(current).Error; err != nil {
+		if err := txForUpdate(tx).Where("id = ?", payload.Id).First(current).Error; err != nil {
 			return err
 		}
 		current.normalizeForResponse()
@@ -291,7 +291,7 @@ func DeleteRedemptionByIdWithAudit(id int, operator FinancialAuditOperator) erro
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		redemption := &Redemption{}
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", id).First(redemption).Error; err != nil {
+		if err := txForUpdate(tx).Where("id = ?", id).First(redemption).Error; err != nil {
 			return err
 		}
 		redemption.normalizeForResponse()

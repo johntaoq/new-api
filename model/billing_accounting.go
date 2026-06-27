@@ -330,7 +330,7 @@ func grantUserQuota(params QuotaFundingGrantParams) error {
 
 func grantUserQuotaTx(tx *gorm.DB, params QuotaFundingGrantParams) (User, error) {
 	var user User
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", params.UserId).First(&user).Error; err != nil {
+	if err := txForUpdate(tx).Where("id = ?", params.UserId).First(&user).Error; err != nil {
 		return user, err
 	}
 	if err := ensureLegacyQuotaFundingCoverageTx(tx, &user); err != nil {
@@ -420,7 +420,7 @@ func RefundUserQuotaLegacy(userId int, quota int) ([]types.QuotaFundingAllocatio
 	var user User
 	var refunded []types.QuotaFundingAllocation
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", userId).First(&user).Error; err != nil {
+		if err := txForUpdate(tx).Where("id = ?", userId).First(&user).Error; err != nil {
 			return err
 		}
 		if err := ensureLegacyQuotaFundingCoverageTx(tx, &user); err != nil {
@@ -429,7 +429,7 @@ func RefundUserQuotaLegacy(userId int, quota int) ([]types.QuotaFundingAllocatio
 
 		now := common.GetTimestamp()
 		var funding UserQuotaFunding
-		err := tx.Where("user_id = ? AND funding_type = ? AND source_type = ?", userId, QuotaFundingTypePaid, QuotaFundingSourceLegacyBalance).
+		err := txForUpdate(tx).Where("user_id = ? AND funding_type = ? AND source_type = ?", userId, QuotaFundingTypePaid, QuotaFundingSourceLegacyBalance).
 			Order("id asc").
 			First(&funding).Error
 		if err != nil {
@@ -500,7 +500,7 @@ func consumeUserQuotaTx(tx *gorm.DB, userId int, quota int) ([]types.QuotaFundin
 	}
 
 	var user User
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", userId).First(&user).Error; err != nil {
+	if err := txForUpdate(tx).Where("id = ?", userId).First(&user).Error; err != nil {
 		return nil, err
 	}
 	if err := ensureLegacyQuotaFundingCoverageTx(tx, &user); err != nil {
@@ -511,7 +511,7 @@ func consumeUserQuotaTx(tx *gorm.DB, userId int, quota int) ([]types.QuotaFundin
 	}
 
 	var fundings []UserQuotaFunding
-	query := tx.Where("user_id = ? AND remaining_quota > 0", userId).
+	query := txForUpdate(tx).Where("user_id = ? AND remaining_quota > 0", userId).
 		Order("CASE WHEN funding_type = 'gift' THEN 0 ELSE 1 END ASC").
 		Order("created_at ASC").
 		Order("id ASC")
@@ -539,12 +539,20 @@ func consumeUserQuotaTx(tx *gorm.DB, userId int, quota int) ([]types.QuotaFundin
 			continue
 		}
 
-		nextRemaining := funding.RemainingQuota - used
-		if err := tx.Model(&UserQuotaFunding{}).Where("id = ?", funding.Id).Updates(map[string]interface{}{
-			"remaining_quota": nextRemaining,
+		result := tx.Model(&UserQuotaFunding{}).Where("id = ? AND remaining_quota >= ?", funding.Id, used).Updates(map[string]interface{}{
+			"remaining_quota": gorm.Expr("remaining_quota - ?", used),
 			"updated_at":      common.GetTimestamp(),
-		}).Error; err != nil {
-			return nil, err
+		})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil, fmt.Errorf("quota funding changed concurrently: funding_id=%d", funding.Id)
+		}
+
+		nextRemaining := funding.RemainingQuota - used
+		if nextRemaining < 0 {
+			return nil, fmt.Errorf("quota funding became negative: funding_id=%d", funding.Id)
 		}
 
 		revenueUSD := 0.0
@@ -598,7 +606,7 @@ func refundUserQuotaAllocationsTx(tx *gorm.DB, userId int, allocations []types.Q
 	}
 
 	var user User
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", userId).First(&user).Error; err != nil {
+	if err := txForUpdate(tx).Where("id = ?", userId).First(&user).Error; err != nil {
 		return nil, nil, err
 	}
 	if err := ensureLegacyQuotaFundingCoverageTx(tx, &user); err != nil {
@@ -622,6 +630,10 @@ func refundUserQuotaAllocationsTx(tx *gorm.DB, userId int, allocations []types.Q
 			continue
 		}
 
+		var funding UserQuotaFunding
+		if err := txForUpdate(tx).Where("id = ? AND user_id = ?", current.FundingId, userId).First(&funding).Error; err != nil {
+			return nil, nil, err
+		}
 		if err := tx.Model(&UserQuotaFunding{}).Where("id = ?", current.FundingId).Updates(map[string]interface{}{
 			"remaining_quota": gorm.Expr("remaining_quota + ?", refundAmount),
 			"updated_at":      common.GetTimestamp(),
@@ -857,7 +869,7 @@ func BackfillLegacyQuotaFunding() error {
 	}
 	for _, user := range users {
 		if err := DB.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", user.Id).First(&user).Error; err != nil {
+			if err := txForUpdate(tx).Where("id = ?", user.Id).First(&user).Error; err != nil {
 				return err
 			}
 			if err := ensureLegacyQuotaFundingCoverageTx(tx, &user); err != nil {

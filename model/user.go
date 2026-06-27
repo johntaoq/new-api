@@ -289,7 +289,7 @@ func (user *User) legacyTransferAffQuotaToQuota(quota int) error {
 	}
 	defer tx.Rollback()
 
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, user.Id).Error; err != nil {
+	if err := txForUpdate(tx).First(&user, user.Id).Error; err != nil {
 		return err
 	}
 	if user.AffQuota < quota {
@@ -334,7 +334,7 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 	}
 	defer tx.Rollback()
 
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, user.Id).Error; err != nil {
+	if err := txForUpdate(tx).First(&user, user.Id).Error; err != nil {
 		return err
 	}
 	if user.AffQuota < quota {

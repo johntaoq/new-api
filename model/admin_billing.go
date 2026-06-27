@@ -395,7 +395,7 @@ func consumeUserQuotaByFundingTypeTx(tx *gorm.DB, userId int, quota int, funding
 	}
 
 	var user User
-	if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
+	if err := txForUpdate(tx).Where("id = ?", userId).First(&user).Error; err != nil {
 		return nil, err
 	}
 	if err := ensureLegacyQuotaFundingCoverageTx(tx, &user); err != nil {
@@ -411,7 +411,7 @@ func consumeUserQuotaByFundingTypeTx(tx *gorm.DB, userId int, quota int, funding
 	}
 
 	var fundings []UserQuotaFunding
-	if err := tx.Where("user_id = ? AND funding_type = ? AND remaining_quota > 0", userId, fundingType).
+	if err := txForUpdate(tx).Where("user_id = ? AND funding_type = ? AND remaining_quota > 0", userId, fundingType).
 		Order("created_at ASC").
 		Order("id ASC").
 		Find(&fundings).Error; err != nil {
@@ -436,12 +436,19 @@ func consumeUserQuotaByFundingTypeTx(tx *gorm.DB, userId int, quota int, funding
 			continue
 		}
 
-		nextRemaining := funding.RemainingQuota - used
-		if err := tx.Model(&UserQuotaFunding{}).Where("id = ?", funding.Id).Updates(map[string]interface{}{
-			"remaining_quota": nextRemaining,
+		result := tx.Model(&UserQuotaFunding{}).Where("id = ? AND remaining_quota >= ?", funding.Id, used).Updates(map[string]interface{}{
+			"remaining_quota": gorm.Expr("remaining_quota - ?", used),
 			"updated_at":      common.GetTimestamp(),
-		}).Error; err != nil {
-			return nil, err
+		})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil, fmt.Errorf("quota funding changed concurrently: funding_id=%d", funding.Id)
+		}
+		nextRemaining := funding.RemainingQuota - used
+		if nextRemaining < 0 {
+			return nil, fmt.Errorf("quota funding became negative: funding_id=%d", funding.Id)
 		}
 
 		revenueUSD := 0.0

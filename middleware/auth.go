@@ -37,6 +37,7 @@ func authenticateRequest(c *gin.Context, minRole int) bool {
 	status := session.Get("status")
 	useAccessToken := false
 	staffRole := ""
+	currentGroup := ""
 
 	if username == nil {
 		accessToken := c.Request.Header.Get("Authorization")
@@ -91,6 +92,17 @@ func authenticateRequest(c *gin.Context, minRole int) bool {
 		c.Abort()
 		return false
 	}
+	if sessionGroup := session.Get("group"); sessionGroup != nil {
+		if value, ok := sessionGroup.(string); ok {
+			currentGroup = value
+		}
+	}
+	if cachedUser, cacheErr := model.GetUserCache(apiUserID); cacheErr == nil {
+		username = cachedUser.Username
+		status = cachedUser.Status
+		currentGroup = cachedUser.Group
+		staffRole = cachedUser.StaffRole
+	}
 	if status.(int) == common.UserStatusDisabled {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -129,8 +141,8 @@ func authenticateRequest(c *gin.Context, minRole int) bool {
 	c.Set("username", username)
 	c.Set("role", role)
 	c.Set("id", id)
-	c.Set("group", session.Get("group"))
-	c.Set("user_group", session.Get("group"))
+	c.Set("group", currentGroup)
+	c.Set("user_group", currentGroup)
 	c.Set("use_access_token", useAccessToken)
 	c.Set("staff_role", staffRole)
 	return true

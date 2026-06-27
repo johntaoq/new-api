@@ -213,7 +213,7 @@ func AdjustUserQuotaWithAudit(params UserQuotaAdjustmentParams) error {
 		}
 
 		var beforeUser User
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", params.UserId).First(&beforeUser).Error; err != nil {
+		if err := txForUpdate(tx).Where("id = ?", params.UserId).First(&beforeUser).Error; err != nil {
 			return err
 		}
 		beforePayload := buildFinancialAuditUserQuotaSnapshot(beforeUser)

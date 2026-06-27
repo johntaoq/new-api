@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,7 +22,9 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -53,9 +54,11 @@ type studioImageReservationRequest struct {
 }
 
 type studioImageReservationActionRequest struct {
-	UserId    int    `json:"user_id"`
-	JobId     string `json:"job_id"`
-	FinalCost int    `json:"final_cost"`
+	UserId      int        `json:"user_id"`
+	JobId       string     `json:"job_id"`
+	FinalCost   int        `json:"final_cost"`
+	OutputCount int        `json:"output_count"`
+	Usage       *dto.Usage `json:"usage"`
 }
 
 type studioImageAuditRequest struct {
@@ -86,7 +89,7 @@ type studioImageUpstreamSelection struct {
 }
 
 func getStudioOpenWebUIURL() string {
-	return strings.TrimRight(common.GetEnvOrDefaultString("STUDIO_OPEN_WEBUI_URL", "http://127.0.0.1:3000"), "/")
+	return strings.TrimRight(common.GetEnvOrDefaultString("STUDIO_OPEN_WEBUI_URL", "https://studio.unikeyx.com"), "/")
 }
 
 func getStudioInternalSecret() string {
@@ -129,61 +132,99 @@ func getStudioImageCredentialTTLSeconds() int64 {
 	return int64(ttl)
 }
 
-func getStudioImageDefaultQuota() int {
-	quota, err := strconv.Atoi(os.Getenv("STUDIO_IMAGE_DEFAULT_QUOTA"))
+func getStudioImagePreconsumeQuota() int {
+	quota, err := strconv.Atoi(os.Getenv("STUDIO_IMAGE_PRECONSUME_QUOTA"))
 	if err != nil || quota <= 0 {
-		return 100
+		return 250000
 	}
 	return quota
 }
 
-func studioImageBillingGroup(user *model.User) string {
+func studioImageUserGroup(user *model.User) string {
 	if user == nil || user.Group == "" {
 		return "default"
 	}
 	return user.Group
 }
 
-func studioImagePriceRatio(modelName string, size string, quality string, n int) float64 {
+func studioImageRequestForPricing(modelName string, size string, quality string, n int) *dto.ImageRequest {
 	if n <= 0 {
 		n = 1
 	}
 	nValue := uint(n)
-	request := &dto.ImageRequest{
+	return &dto.ImageRequest{
 		Model:   modelName,
 		Size:    size,
 		Quality: quality,
 		N:       &nValue,
 	}
-	meta := request.GetTokenCountMeta()
-	if meta == nil || meta.ImagePriceRatio <= 0 {
-		return float64(n)
-	}
-	return meta.ImagePriceRatio
 }
 
-func calculateStudioImageQuota(user *model.User, req studioImageReservationRequest) int {
-	groupRatio := ratio_setting.GetGroupRatio(studioImageBillingGroup(user))
-	priceRatio := studioImagePriceRatio(req.Model, req.Size, req.Quality, req.N)
-
-	if modelPrice, usePrice := ratio_setting.GetModelPrice(req.Model, false); usePrice {
-		quota := int(modelPrice * common.QuotaPerUnit * groupRatio * priceRatio)
-		if modelPrice > 0 && groupRatio > 0 && priceRatio > 0 && quota <= 0 {
-			return 1
-		}
-		return quota
+func buildStudioImageRelayInfo(
+	c *gin.Context,
+	user *model.User,
+	requestId string,
+	imageRequest *dto.ImageRequest,
+	upstream *studioImageUpstreamSelection,
+) *relaycommon.RelayInfo {
+	group := studioImageUserGroup(user)
+	now := time.Now()
+	relayInfo := &relaycommon.RelayInfo{
+		Request:           imageRequest,
+		RequestId:         requestId,
+		UserId:            user.Id,
+		UsingGroup:        group,
+		UserGroup:         group,
+		UserQuota:         user.Quota,
+		UserEmail:         user.Email,
+		OriginModelName:   imageRequest.Model,
+		TokenGroup:        group,
+		StartTime:         now,
+		FirstResponseTime: now,
+		RequestURLPath:    "/api/studio/images/generations",
+		UserSetting:       user.GetSetting(),
+		ForcePreConsume:   true,
+		RelayFormat:       types.RelayFormatOpenAIImage,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelId:            upstream.ChannelId,
+			ChannelType:          upstream.ChannelType,
+			ChannelBaseUrl:       upstream.BaseURL,
+			UpstreamModelName:    upstream.UpstreamModel,
+			SupportStreamOptions: false,
+		},
 	}
 
-	if modelRatio, ok, _ := ratio_setting.GetModelRatio(req.Model); ok {
-		preConsumedTokens := common.PreConsumedQuota + 1584
-		quota := int(math.Round(float64(preConsumedTokens) * modelRatio * groupRatio * priceRatio))
-		if modelRatio > 0 && groupRatio > 0 && priceRatio > 0 && quota <= 0 {
-			return 1
-		}
-		return quota
+	if c != nil {
+		c.Set("token_name", "AI Studio Image generation")
+		c.Set(string(constant.ContextKeyUserId), user.Id)
+		c.Set(string(constant.ContextKeyUserGroup), group)
+		c.Set(string(constant.ContextKeyUsingGroup), group)
+		c.Set(string(constant.ContextKeyOriginalModel), imageRequest.Model)
+		c.Set(string(constant.ContextKeyUserQuota), user.Quota)
+		c.Set(string(constant.ContextKeyUserEmail), user.Email)
+		c.Set(string(constant.ContextKeyChannelId), upstream.ChannelId)
+		c.Set(string(constant.ContextKeyChannelName), upstream.ChannelName)
+		c.Set(string(constant.ContextKeyChannelType), upstream.ChannelType)
+		c.Set(string(constant.ContextKeyChannelBaseUrl), upstream.BaseURL)
+		c.Set(common.RequestIdKey, requestId)
 	}
+	return relayInfo
+}
 
-	return getStudioImageDefaultQuota() * req.N
+func priceStudioImageRequest(
+	c *gin.Context,
+	user *model.User,
+	requestId string,
+	imageRequest *dto.ImageRequest,
+	upstream *studioImageUpstreamSelection,
+) (*relaycommon.RelayInfo, types.PriceData, error) {
+	relayInfo := buildStudioImageRelayInfo(c, user, requestId, imageRequest, upstream)
+	meta := imageRequest.GetTokenCountMeta()
+	priceData, err := helper.ModelPriceHelper(c, relayInfo, 0, meta)
+	if err != nil {
+		return nil, types.PriceData{}, err
+	}
+	return relayInfo, priceData, nil
 }
 
 func studioImageChannelIdFromRef(upstreamRef string) int {
@@ -206,19 +247,108 @@ func studioImageReservationAllocations(reservation *model.StudioImageReservation
 	return allocations
 }
 
-func studioImageEstimatedCostUSD(quota int, group string) float64 {
+func studioImageUsageHasActualTokens(usage *dto.Usage) bool {
+	return usage != nil &&
+		(usage.PromptTokens > 0 ||
+			usage.CompletionTokens > 0 ||
+			usage.TotalTokens > 0 ||
+			usage.InputTokens > 0 ||
+			usage.OutputTokens > 0 ||
+			usage.NumInputTextTokens > 0 ||
+			usage.NumInputImageTokens > 0 ||
+			usage.NumOutputTokens > 0 ||
+			usage.PromptTokensDetails.TextTokens > 0 ||
+			usage.PromptTokensDetails.ImageTokens > 0)
+}
+
+func normalizeStudioImageUsage(usage *dto.Usage, outputCount int) *dto.Usage {
+	if usage == nil {
+		usage = &dto.Usage{}
+	}
+	normalized := *usage
+	maiInputTokens := normalized.NumInputTextTokens + normalized.NumInputImageTokens
+	if normalized.NumInputTextTokens > 0 && normalized.PromptTokensDetails.TextTokens == 0 {
+		normalized.PromptTokensDetails.TextTokens = normalized.NumInputTextTokens
+	}
+	if normalized.NumInputImageTokens > 0 && normalized.PromptTokensDetails.ImageTokens == 0 {
+		normalized.PromptTokensDetails.ImageTokens = normalized.NumInputImageTokens
+	}
+	if normalized.InputTokens == 0 && maiInputTokens > 0 {
+		normalized.InputTokens = maiInputTokens
+	}
+	if normalized.OutputTokens == 0 && normalized.NumOutputTokens > 0 {
+		normalized.OutputTokens = normalized.NumOutputTokens
+	}
+	if normalized.PromptTokens == 0 && normalized.InputTokens > 0 {
+		normalized.PromptTokens = normalized.InputTokens
+	}
+	if normalized.CompletionTokens == 0 && normalized.OutputTokens > 0 {
+		normalized.CompletionTokens = normalized.OutputTokens
+	}
+	if normalized.InputTokensDetails != nil {
+		if normalized.PromptTokensDetails.CachedTokens == 0 {
+			normalized.PromptTokensDetails.CachedTokens = normalized.InputTokensDetails.CachedTokens
+		}
+		if normalized.PromptTokensDetails.ImageTokens == 0 {
+			normalized.PromptTokensDetails.ImageTokens = normalized.InputTokensDetails.ImageTokens
+		}
+		if normalized.PromptTokensDetails.TextTokens == 0 {
+			normalized.PromptTokensDetails.TextTokens = normalized.InputTokensDetails.TextTokens
+		}
+		if normalized.PromptTokensDetails.AudioTokens == 0 {
+			normalized.PromptTokensDetails.AudioTokens = normalized.InputTokensDetails.AudioTokens
+		}
+	}
+	inputDetailTokens := normalized.PromptTokensDetails.TextTokens +
+		normalized.PromptTokensDetails.ImageTokens +
+		normalized.PromptTokensDetails.AudioTokens
+	if normalized.InputTokens == 0 && inputDetailTokens > 0 {
+		normalized.InputTokens = inputDetailTokens
+	}
+	if normalized.PromptTokens == 0 && inputDetailTokens > 0 {
+		normalized.PromptTokens = inputDetailTokens
+	}
+	if normalized.PromptTokens == 0 && normalized.CompletionTokens == 0 && normalized.TotalTokens > 0 {
+		normalized.PromptTokens = normalized.TotalTokens
+	}
+	if normalized.TotalTokens == 0 {
+		normalized.TotalTokens = normalized.PromptTokens + normalized.CompletionTokens
+	}
+	if normalized.TotalTokens == 0 && outputCount > 0 {
+		normalized.PromptTokens = outputCount
+		normalized.TotalTokens = outputCount
+	}
+	return &normalized
+}
+
+func calculateStudioImageFinalCost(
+	c *gin.Context,
+	reservation *model.StudioImageReservation,
+	relayInfo *relaycommon.RelayInfo,
+	priceData types.PriceData,
+	usage *dto.Usage,
+	outputCount int,
+) (int, *dto.Usage) {
+	normalizedUsage := normalizeStudioImageUsage(usage, outputCount)
+	if !priceData.UsePrice && !studioImageUsageHasActualTokens(usage) {
+		return reservation.EstimatedCost, normalizedUsage
+	}
+	relayInfo.PriceData = priceData
+	finalCost := service.CalculateTextQuota(c, relayInfo, normalizedUsage)
+	if finalCost <= 0 && !priceData.FreeModel && normalizedUsage.TotalTokens > 0 {
+		return 1, normalizedUsage
+	}
+	return finalCost, normalizedUsage
+}
+
+func studioImageEstimatedCostUSD(quota int, groupRatio float64) float64 {
 	if quota <= 0 || common.QuotaPerUnit <= 0 {
 		return 0
 	}
-	groupRatio := ratio_setting.GetGroupRatio(group)
 	if groupRatio <= 0 {
 		groupRatio = 1
 	}
 	return float64(quota) / common.QuotaPerUnit / groupRatio
-}
-
-func studioImageModelPriceUSD(quota int, group string) float64 {
-	return studioImageEstimatedCostUSD(quota, group)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -230,7 +360,16 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func recordStudioImageConsume(reservation *model.StudioImageReservation, jobId string, quota int) {
+func recordStudioImageConsume(
+	c *gin.Context,
+	reservation *model.StudioImageReservation,
+	jobId string,
+	quota int,
+	usage *dto.Usage,
+	relayInfo *relaycommon.RelayInfo,
+	priceData types.PriceData,
+	outputCount int,
+) {
 	if reservation == nil || quota <= 0 {
 		return
 	}
@@ -254,39 +393,65 @@ func recordStudioImageConsume(reservation *model.StudioImageReservation, jobId s
 	}
 
 	paidQuotaUsed, giftQuotaUsed, _ := model.SumQuotaFundingAllocations(studioImageReservationAllocations(reservation))
-	modelPrice := studioImageModelPriceUSD(quota, group)
+	other := service.GenerateTextOtherInfo(
+		c,
+		relayInfo,
+		priceData.ModelRatio,
+		priceData.GroupRatioInfo.GroupRatio,
+		priceData.CompletionRatio,
+		usage.PromptTokensDetails.CachedTokens,
+		priceData.CacheRatio,
+		priceData.ModelPrice,
+		priceData.GroupRatioInfo.GroupSpecialRatio,
+	)
+	other["source"] = "ai_studio"
+	other["reservation_id"] = reservation.Id
+	other["job_id"] = jobId
+	other["provider"] = reservation.Provider
+	other["size"] = reservation.Size
+	other["quality"] = reservation.Quality
+	other["n"] = reservation.N
+	other["upstream_ref"] = reservation.UpstreamRef
+	other["estimated_cost"] = reservation.EstimatedCost
+	other["final_cost"] = quota
+	other["quota_type"] = func() int {
+		if priceData.UsePrice {
+			return 1
+		}
+		return 0
+	}()
+	other["billing_source"] = "wallet"
+	other["prompt_tokens"] = usage.PromptTokens
+	other["completion_tokens"] = usage.CompletionTokens
+	other["total_tokens"] = usage.TotalTokens
+	other["input_tokens"] = usage.InputTokens
+	other["output_tokens"] = usage.OutputTokens
+	if usage.PromptTokensDetails.TextTokens > 0 {
+		other["input_text_tokens"] = usage.PromptTokensDetails.TextTokens
+	}
+	if usage.PromptTokensDetails.ImageTokens > 0 {
+		other["input_image_tokens"] = usage.PromptTokensDetails.ImageTokens
+		other["image_ratio"] = priceData.ImageRatio
+	}
+	other["output_count"] = outputCount
+	other["paid_quota_used"] = paidQuotaUsed
+	other["gift_quota_used"] = giftQuotaUsed
+	other["request_path"] = "/api/studio/images/generations"
+
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
-		UserId:    reservation.UserId,
-		LogType:   model.LogTypeConsume,
-		Content:   fmt.Sprintf("AI Studio image generation: size %s, quality %s, n %d", reservation.Size, reservation.Quality, reservation.N),
-		ChannelId: channelId,
-		ModelName: reservation.Model,
-		Quota:     quota,
-		TokenName: "AI Studio Image generation",
-		Group:     group,
-		Other: map[string]interface{}{
-			"source":           "ai_studio",
-			"reservation_id":   reservation.Id,
-			"job_id":           jobId,
-			"provider":         reservation.Provider,
-			"size":             reservation.Size,
-			"quality":          reservation.Quality,
-			"n":                reservation.N,
-			"upstream_ref":     reservation.UpstreamRef,
-			"estimated_cost":   reservation.EstimatedCost,
-			"final_cost":       quota,
-			"quota_type":       1,
-			"billing_source":   "wallet",
-			"model_price":      modelPrice,
-			"model_ratio":      0,
-			"group_ratio":      ratio_setting.GetGroupRatio(group),
-			"user_group_ratio": -1,
-			"completion_ratio": 0,
-			"cache_ratio":      0,
-			"paid_quota_used":  paidQuotaUsed,
-			"gift_quota_used":  giftQuotaUsed,
-			"request_path":     "/api/studio/images/generations",
-		},
+		UserId:           reservation.UserId,
+		LogType:          model.LogTypeConsume,
+		Content:          fmt.Sprintf("AI Studio image generation: size %s, quality %s, n %d", reservation.Size, reservation.Quality, reservation.N),
+		ChannelId:        channelId,
+		ModelName:        reservation.Model,
+		Quota:            quota,
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TokenName:        "AI Studio Image generation",
+		UseTimeSeconds:   int(time.Now().Unix() - reservation.CreatedAt),
+		Group:            group,
+		RequestId:        firstNonEmpty(jobId, reservation.RequestId, reservation.Id),
+		Other:            other,
 	})
 
 	_ = model.RecordChannelCostLedger(model.RecordChannelCostLedgerParams{
@@ -299,9 +464,11 @@ func recordStudioImageConsume(reservation *model.StudioImageReservation, jobId s
 		OriginModelName:   reservation.Model,
 		UpstreamModelName: reservation.Model,
 		EntryType:         model.ChannelCostEntryTypeConsume,
+		PromptTokens:      usage.PromptTokens,
+		CompletionTokens:  usage.CompletionTokens,
 		ActualQuota:       quota,
-		EstimatedCostUSD:  studioImageEstimatedCostUSD(quota, group),
-		CostBasis:         "studio_image_model_price",
+		EstimatedCostUSD:  studioImageEstimatedCostUSD(quota, priceData.GroupRatioInfo.GroupRatio),
+		CostBasis:         "studio_image_new_api_pricing",
 		OccurredAt:        common.GetTimestamp(),
 		Allocations:       studioImageReservationAllocations(reservation),
 	})
@@ -313,7 +480,7 @@ func studioImageAuditAmount(req studioImageAuditRequest, reservation *model.Stud
 	}
 	switch req.EventType {
 	case "succeeded":
-		if reservation.FinalCost > 0 {
+		if reservation.Status == model.StudioImageReservationStatusCommitted {
 			return reservation.FinalCost
 		}
 		return reservation.EstimatedCost
@@ -410,6 +577,12 @@ func endpointTypesContain(endpointTypes []constant.EndpointType, target constant
 	return false
 }
 
+type studioImageSizeConstraints struct {
+	MinWidth  int `json:"min_width"`
+	MinHeight int `json:"min_height"`
+	MaxPixels int `json:"max_pixels"`
+}
+
 type studioImageModelConfig struct {
 	Sizes              []string
 	Quality            []string
@@ -417,18 +590,69 @@ type studioImageModelConfig struct {
 	SupportsN          bool
 	MaxN               int
 	RequestShape       string
+	SizeMode           string
+	SizeConstraints    *studioImageSizeConstraints
 	SupportsImageEdit  bool
 	MaxReferenceImages int
+	ReferenceMimeTypes []string
+	ReferenceFieldName string
+	EditPayloadShape   string
+}
+
+func compactStudioModelName(modelName string) string {
+	return strings.NewReplacer("-", "", "_", "", ".", "").Replace(strings.ToLower(modelName))
+}
+
+func isMaiImage25Model(modelName string) bool {
+	return strings.Contains(compactStudioModelName(modelName), "maiimage25")
+}
+
+func defaultMaiImageSizes() []string {
+	return []string{
+		"1024x1024",
+		"1152x896",
+		"896x1152",
+		"1216x832",
+		"832x1216",
+		"1344x768",
+		"768x1344",
+		"1280x800",
+		"800x1280",
+	}
+}
+
+func defaultMaiImageSizeConstraints() *studioImageSizeConstraints {
+	return &studioImageSizeConstraints{
+		MinWidth:  768,
+		MinHeight: 768,
+		MaxPixels: 1048576,
+	}
 }
 
 func studioImageConfigForModel(modelName string) studioImageModelConfig {
 	normalized := strings.ToLower(modelName)
 	if strings.Contains(normalized, "mai-image") {
+		supportsEdit := isMaiImage25Model(normalized)
+		maxReferenceImages := 0
+		referenceMimeTypes := []string{}
+		editPayloadShape := ""
+		if supportsEdit {
+			maxReferenceImages = 1
+			referenceMimeTypes = []string{"image/png", "image/jpeg"}
+			editPayloadShape = "mai-multipart"
+		}
 		return studioImageModelConfig{
-			Sizes:        []string{"1024x1024", "1024x768", "768x1024", "1365x768", "768x1365"},
-			SupportsN:    false,
-			MaxN:         1,
-			RequestShape: "width-height",
+			Sizes:              defaultMaiImageSizes(),
+			SupportsN:          false,
+			MaxN:               1,
+			RequestShape:       "width-height",
+			SizeMode:           "preset",
+			SizeConstraints:    defaultMaiImageSizeConstraints(),
+			SupportsImageEdit:  supportsEdit,
+			MaxReferenceImages: maxReferenceImages,
+			ReferenceMimeTypes: referenceMimeTypes,
+			ReferenceFieldName: "image",
+			EditPayloadShape:   editPayloadShape,
 		}
 	}
 	if strings.Contains(normalized, "gpt-image-2") {
@@ -439,8 +663,11 @@ func studioImageConfigForModel(modelName string) studioImageModelConfig {
 			SupportsN:          true,
 			MaxN:               3,
 			RequestShape:       "size",
+			SizeMode:           "preset",
 			SupportsImageEdit:  true,
 			MaxReferenceImages: 16,
+			ReferenceMimeTypes: []string{"image/png", "image/jpeg", "image/webp"},
+			EditPayloadShape:   "openai-multipart",
 		}
 	}
 	if strings.Contains(normalized, "gpt-image") {
@@ -451,8 +678,11 @@ func studioImageConfigForModel(modelName string) studioImageModelConfig {
 			SupportsN:          true,
 			MaxN:               3,
 			RequestShape:       "size",
+			SizeMode:           "preset",
 			SupportsImageEdit:  true,
 			MaxReferenceImages: 16,
+			ReferenceMimeTypes: []string{"image/png", "image/jpeg", "image/webp"},
+			EditPayloadShape:   "openai-multipart",
 		}
 	}
 	if normalized == "dall-e" || normalized == "dall-e-2" {
@@ -461,6 +691,7 @@ func studioImageConfigForModel(modelName string) studioImageModelConfig {
 			SupportsN:    true,
 			MaxN:         3,
 			RequestShape: "size",
+			SizeMode:     "preset",
 		}
 	}
 	if normalized == "dall-e-3" {
@@ -471,6 +702,7 @@ func studioImageConfigForModel(modelName string) studioImageModelConfig {
 			SupportsN:       false,
 			MaxN:            1,
 			RequestShape:    "size",
+			SizeMode:        "preset",
 		}
 	}
 	return studioImageModelConfig{
@@ -478,6 +710,7 @@ func studioImageConfigForModel(modelName string) studioImageModelConfig {
 		SupportsN:    true,
 		MaxN:         3,
 		RequestShape: "size",
+		SizeMode:     "preset",
 	}
 }
 
@@ -501,6 +734,19 @@ func (config studioImageModelConfig) toPayload() gin.H {
 		}
 	}
 
+	sizeMode := config.SizeMode
+	if sizeMode == "" {
+		sizeMode = "preset"
+	}
+	editPayloadShape := config.EditPayloadShape
+	if editPayloadShape == "" && config.SupportsImageEdit {
+		editPayloadShape = "openai-multipart"
+	}
+	referenceMimeTypes := config.ReferenceMimeTypes
+	if referenceMimeTypes == nil {
+		referenceMimeTypes = []string{}
+	}
+
 	return gin.H{
 		"sizes":                config.Sizes,
 		"quality":              quality,
@@ -508,8 +754,13 @@ func (config studioImageModelConfig) toPayload() gin.H {
 		"supports_n":           config.SupportsN,
 		"max_n":                config.MaxN,
 		"request_shape":        config.RequestShape,
+		"size_mode":            sizeMode,
+		"size_constraints":     config.SizeConstraints,
 		"supports_image_edit":  config.SupportsImageEdit,
 		"max_reference_images": config.MaxReferenceImages,
+		"reference_mime_types": referenceMimeTypes,
+		"reference_field_name": config.ReferenceFieldName,
+		"edit_payload_shape":   editPayloadShape,
 		"default_size":         defaultSize,
 		"default_quality":      defaultQuality,
 		"default_n":            1,
@@ -523,6 +774,45 @@ func stringSliceContains(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func parseStudioImageSize(size string) (int, int, bool) {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(size)), "x")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	width, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	height, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	return width, height, width > 0 && height > 0
+}
+
+func (config studioImageModelConfig) supportsSize(size string) bool {
+	if stringSliceContains(config.Sizes, size) {
+		return true
+	}
+	if config.SizeConstraints == nil {
+		return false
+	}
+	width, height, ok := parseStudioImageSize(size)
+	if !ok {
+		return false
+	}
+	if config.SizeConstraints.MinWidth > 0 && width < config.SizeConstraints.MinWidth {
+		return false
+	}
+	if config.SizeConstraints.MinHeight > 0 && height < config.SizeConstraints.MinHeight {
+		return false
+	}
+	if config.SizeConstraints.MaxPixels > 0 && width*height > config.SizeConstraints.MaxPixels {
+		return false
+	}
+	return true
 }
 
 func getStudioUserFromInternalRequest(c *gin.Context) (*model.User, bool) {
@@ -699,6 +989,35 @@ func selectStudioImageUpstream(user *model.User, reservation *model.StudioImageR
 		BaseURL:       baseURL,
 		APIKey:        key,
 		APIVersion:    apiVersion,
+		Deployment:    upstreamModel,
+		UpstreamModel: upstreamModel,
+		UpstreamRef:   fmt.Sprintf("channel:%d", channel.Id),
+		ChannelId:     channel.Id,
+		ChannelName:   channel.Name,
+		ChannelType:   channel.Type,
+	}, nil
+}
+
+func studioImageBillingUpstreamFromReservation(reservation *model.StudioImageReservation) (*studioImageUpstreamSelection, error) {
+	channelId := studioImageChannelIdFromRef(reservation.UpstreamRef)
+	if channelId <= 0 {
+		return &studioImageUpstreamSelection{
+			Provider:      reservation.Provider,
+			UpstreamModel: reservation.Model,
+			UpstreamRef:   reservation.UpstreamRef,
+		}, nil
+	}
+
+	channel, err := model.GetChannelById(channelId, true)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := strings.TrimRight(channel.GetBaseURL(), "/")
+	upstreamModel := resolveStudioMappedModel(reservation.Model, channel.GetModelMapping())
+	return &studioImageUpstreamSelection{
+		Provider:      studioImageProviderForChannel(channel, baseURL),
+		BaseURL:       baseURL,
+		APIVersion:    channel.Other,
 		Deployment:    upstreamModel,
 		UpstreamModel: upstreamModel,
 		UpstreamRef:   fmt.Sprintf("channel:%d", channel.Id),
@@ -993,7 +1312,7 @@ func CreateStudioImageReservation(c *gin.Context) {
 	if req.Quality == "" {
 		req.Quality = modelConfig.toPayload()["default_quality"].(string)
 	}
-	if !stringSliceContains(modelConfig.Sizes, req.Size) {
+	if !modelConfig.supportsSize(req.Size) {
 		common.ApiErrorMsg(c, "size is not supported by image model")
 		return
 	}
@@ -1035,7 +1354,13 @@ func CreateStudioImageReservation(c *gin.Context) {
 	reservation.Provider = selectedUpstream.Provider
 	reservation.UpstreamRef = selectedUpstream.UpstreamRef
 
-	cost := calculateStudioImageQuota(user, req)
+	imageRequest := studioImageRequestForPricing(req.Model, req.Size, req.Quality, req.N)
+	if _, _, err := priceStudioImageRequest(c, user, req.RequestId, imageRequest, selectedUpstream); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	cost := getStudioImagePreconsumeQuota()
 	allocations, err := model.ConsumeUserQuotaWithAllocation(req.UserId, cost)
 	if err != nil {
 		common.ApiError(c, err)
@@ -1127,10 +1452,31 @@ func CommitStudioImageReservation(c *gin.Context) {
 		common.ApiErrorMsg(c, "reservation does not belong to user")
 		return
 	}
-	finalCost := req.FinalCost
-	if finalCost <= 0 {
-		finalCost = existing.EstimatedCost
+	user, err := model.GetUserById(existing.UserId, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
+	outputCount := req.OutputCount
+	if outputCount <= 0 {
+		outputCount = existing.N
+	}
+	if outputCount > existing.N && existing.N > 0 {
+		outputCount = existing.N
+	}
+	selectedUpstream, err := studioImageBillingUpstreamFromReservation(existing)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	imageRequest := studioImageRequestForPricing(existing.Model, existing.Size, existing.Quality, outputCount)
+	relayInfo, priceData, err := priceStudioImageRequest(c, user, existing.RequestId, imageRequest, selectedUpstream)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	finalCost, usage := calculateStudioImageFinalCost(c, existing, relayInfo, priceData, req.Usage, outputCount)
+
 	shouldRecordConsume := existing.Status == model.StudioImageReservationStatusReserved
 	reservation, err := model.CommitStudioImageReservation(id, finalCost)
 	if err != nil {
@@ -1138,7 +1484,11 @@ func CommitStudioImageReservation(c *gin.Context) {
 		return
 	}
 	if shouldRecordConsume {
-		recordStudioImageConsume(reservation, req.JobId, finalCost)
+		relayInfo.FinalPreConsumedQuota = finalCost
+		relayInfo.BillingSource = service.BillingSourceWallet
+		relayInfo.QuotaFundingAllocations = studioImageReservationAllocations(reservation)
+		relayInfo.PaidQuotaConsumed, relayInfo.GiftQuotaConsumed, _ = model.SumQuotaFundingAllocations(relayInfo.QuotaFundingAllocations)
+		recordStudioImageConsume(c, reservation, req.JobId, finalCost, usage, relayInfo, priceData, outputCount)
 	}
 	common.ApiSuccess(c, reservation)
 }

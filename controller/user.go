@@ -445,6 +445,32 @@ func calculateUserPermissions(userRole int, staffRole string) map[string]interfa
 	}
 }
 
+func recordUserPrivilegeAudit(operatorId int, operatorUsername string, targetUserId int, targetUsername string, action string, beforeRole int, beforeStaffRole string, beforeStatus int, afterRole int, afterStaffRole string, afterStatus int) {
+	if beforeRole == afterRole && beforeStaffRole == afterStaffRole && beforeStatus == afterStatus {
+		return
+	}
+
+	content := fmt.Sprintf(
+		"operator %s(id:%d) %s user %s(id:%d): role %d -> %d, staff_role %q -> %q, status %d -> %d",
+		operatorUsername,
+		operatorId,
+		action,
+		targetUsername,
+		targetUserId,
+		beforeRole,
+		afterRole,
+		beforeStaffRole,
+		afterStaffRole,
+		beforeStatus,
+		afterStatus,
+	)
+
+	model.RecordLog(targetUserId, model.LogTypeManage, content)
+	if operatorId != 0 && operatorId != targetUserId {
+		model.RecordLog(operatorId, model.LogTypeManage, content)
+	}
+}
+
 func generateDefaultSidebarConfig(userRole int) string {
 	defaultConfig := model.BuildSidebarPermissionModules(userRole, "")
 	configBytes, err := common.Marshal(defaultConfig)
@@ -567,6 +593,9 @@ func UpdateUser(c *gin.Context) {
 		common.ApiError(c, errors.New("quota fields can no longer be edited here, please use the dedicated quota adjustment action"))
 		return
 	}
+	beforeRole := originUser.Role
+	beforeStaffRole := originUser.StaffRole
+	beforeStatus := originUser.Status
 	if updatedUser.Password == "$I_LOVE_U" {
 		updatedUser.Password = ""
 	}
@@ -575,6 +604,19 @@ func UpdateUser(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	recordUserPrivilegeAudit(
+		c.GetInt("id"),
+		c.GetString("username"),
+		updatedUser.Id,
+		updatedUser.Username,
+		"updated",
+		beforeRole,
+		beforeStaffRole,
+		beforeStatus,
+		updatedUser.Role,
+		updatedUser.StaffRole,
+		updatedUser.Status,
+	)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -869,6 +911,9 @@ func ManageUser(c *gin.Context) {
 	}
 
 	myRole := c.GetInt("role")
+	beforeRole := user.Role
+	beforeStaffRole := user.StaffRole
+	beforeStatus := user.Status
 	switch req.Action {
 	case "disable":
 		if user.Role == common.RoleRootUser {
@@ -930,6 +975,19 @@ func ManageUser(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	recordUserPrivilegeAudit(
+		c.GetInt("id"),
+		c.GetString("username"),
+		user.Id,
+		user.Username,
+		req.Action,
+		beforeRole,
+		beforeStaffRole,
+		beforeStatus,
+		user.Role,
+		user.StaffRole,
+		user.Status,
+	)
 	clearUser := model.User{
 		Role:      user.Role,
 		Status:    user.Status,
