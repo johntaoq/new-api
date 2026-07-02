@@ -25,16 +25,15 @@ import {
   copy,
   showError,
   showSuccess,
-  encodeToBase64,
 } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 import {
   fetchTokenKey as fetchTokenKeyById,
-  fetchTokenKeysBatch,
   getServerAddress,
   encodeChannelConnectionString,
 } from '../../helpers/token';
+import { buildExternalWebUrl } from '../../helpers/web-url';
 
 export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
   const { t } = useTranslation();
@@ -42,7 +41,6 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
   // Basic state
   const [tokens, setTokens] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [groupRatios, setGroupRatios] = useState({});
   const [activePage, setActivePage] = useState(1);
   const [tokenCount, setTokenCount] = useState(0);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
@@ -231,41 +229,7 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
     if (serverAddress === '') {
       serverAddress = window.location.origin;
     }
-    if (url.includes('{cherryConfig}') === true) {
-      let cherryConfig = {
-        id: 'new-api',
-        baseUrl: serverAddress,
-        apiKey: `sk-${fullKey}`,
-      };
-      let encodedConfig = encodeURIComponent(
-        encodeToBase64(JSON.stringify(cherryConfig)),
-      );
-      url = url.replaceAll('{cherryConfig}', encodedConfig);
-    } else if (url.includes('{aionuiConfig}') === true) {
-      let aionuiConfig = {
-        platform: 'new-api',
-        baseUrl: serverAddress,
-        apiKey: `sk-${fullKey}`,
-      };
-      let encodedConfig = encodeURIComponent(
-        encodeToBase64(JSON.stringify(aionuiConfig)),
-      );
-      url = url.replaceAll('{aionuiConfig}', encodedConfig);
-    } else if (url.includes('{deepchatConfig}') === true) {
-      let deepchatConfig = {
-        id: 'new-api',
-        baseUrl: serverAddress,
-        apiKey: `sk-${fullKey}`,
-      };
-      let encodedConfig = encodeURIComponent(
-        encodeToBase64(JSON.stringify(deepchatConfig)),
-      );
-      url = url.replaceAll('{deepchatConfig}', encodedConfig);
-    } else {
-      let encodedServerAddress = encodeURIComponent(serverAddress);
-      url = url.replaceAll('{address}', encodedServerAddress);
-      url = url.replaceAll('{key}', `sk-${fullKey}`);
-    }
+    url = buildExternalWebUrl({ url, key: fullKey, serverAddress });
 
     window.open(url, '_blank');
   };
@@ -420,17 +384,14 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
       return;
     }
     try {
-      const ids = selectedKeys.map((token) => token.id);
-      const keysMap = await fetchTokenKeysBatch(ids);
-
-      setResolvedTokenKeys((prev) => ({ ...prev, ...keysMap }));
-
+      const keys = await Promise.all(
+        selectedKeys.map((token) => fetchTokenKey(token, { suppressError: true })),
+      );
       let content = '';
-      for (const token of selectedKeys) {
-        const fullKey = keysMap[token.id];
-        if (!fullKey) continue;
+      for (let i = 0; i < selectedKeys.length; i++) {
+        const fullKey = keys[i];
         if (copyType === 'name+key') {
-          content += `${token.name}    sk-${fullKey}\n`;
+          content += `${selectedKeys[i].name}    sk-${fullKey}\n`;
         } else {
           content += `sk-${fullKey}\n`;
         }
@@ -448,17 +409,6 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
       .catch((reason) => {
         showError(reason);
       });
-    API.get('/api/user/self/groups')
-      .then((res) => {
-        if (res.data.success && res.data.data) {
-          const ratios = {};
-          for (const [name, info] of Object.entries(res.data.data)) {
-            ratios[name] = info.ratio;
-          }
-          setGroupRatios(ratios);
-        }
-      })
-      .catch(() => {});
   }, [pageSize]);
 
   return {
@@ -469,7 +419,6 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
     tokenCount,
     pageSize,
     searching,
-    groupRatios,
 
     // Selection state
     selectedKeys,

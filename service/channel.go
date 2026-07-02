@@ -2,9 +2,11 @@ package service
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -42,7 +44,18 @@ func EnableChannel(channelId int, usingKey string, channelName string) {
 	}
 }
 
-func ShouldDisableChannel(err *types.NewAPIError) bool {
+func ShouldDisableChannel(first any, rest ...*types.NewAPIError) bool {
+	channelType := 0
+	var err *types.NewAPIError
+	switch value := first.(type) {
+	case int:
+		channelType = value
+		if len(rest) > 0 {
+			err = rest[0]
+		}
+	case *types.NewAPIError:
+		err = value
+	}
 	if !common.AutomaticDisableChannelEnabled {
 		return false
 	}
@@ -56,6 +69,18 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 		return false
 	}
 	if operation_setting.ShouldDisableByStatusCode(err.StatusCode) {
+		return true
+	}
+	if err.StatusCode == http.StatusForbidden && channelType == constant.ChannelTypeGemini {
+		return true
+	}
+	oaiErr := err.ToOpenAIError()
+	switch oaiErr.Code {
+	case "invalid_api_key", "account_deactivated", "billing_not_active", "pre_consume_token_quota_failed", "Arrearage":
+		return true
+	}
+	switch oaiErr.Type {
+	case "insufficient_quota", "insufficient_user_quota", "authentication_error", "permission_error", "forbidden":
 		return true
 	}
 

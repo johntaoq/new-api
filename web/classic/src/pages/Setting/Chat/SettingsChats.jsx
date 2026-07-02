@@ -74,6 +74,7 @@ export default function SettingsChats(props) {
     { name: 'DeepChat', url: 'deepchat://provider/install?v=1&data={deepchatConfig}' },
     { name: 'Lobe Chat', url: 'https://chat-preview.lobehub.com/?settings={"keyVaults":{"openai":{"apiKey":"{key}","baseURL":"{address}/v1"}}}' },
     { name: 'AI as Workspace', url: 'https://aiaw.app/set-provider?provider={"type":"openai","settings":{"apiKey":"{key}","baseURL":"{address}/v1","compatibility":"strict"}}' },
+    { name: 'Open WebUI', url: 'http://www.unikeyx.com:7000/?new_api_config={openWebUIConfig}' },
     { name: 'AMA 问天', url: 'ama://set-api-key?server={address}&key={key}' },
     { name: 'OpenCat', url: 'opencat://team/join?domain={address}&token={key}' },
   ];

@@ -53,7 +53,6 @@ const UsersTable = (usersData) => {
     t,
   } = usersData;
 
-  // Modal states
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showDemoteModal, setShowDemoteModal] = useState(false);
   const [showEnableDisableModal, setShowEnableDisableModal] = useState(false);
@@ -65,7 +64,6 @@ const UsersTable = (usersData) => {
   const [showUserSubscriptionsModal, setShowUserSubscriptionsModal] =
     useState(false);
 
-  // Modal handlers
   const showPromoteUserModal = (user) => {
     setModalUser(user);
     setShowPromoteModal(true);
@@ -102,7 +100,6 @@ const UsersTable = (usersData) => {
     setShowUserSubscriptionsModal(true);
   };
 
-  // Modal confirm handlers
   const handlePromoteConfirm = () => {
     manageUser(modalUser.id, 'promote', modalUser);
     setShowPromoteModal(false);
@@ -128,7 +125,6 @@ const UsersTable = (usersData) => {
     setShowResetTwoFAModal(false);
   };
 
-  // Get all columns
   const columns = useMemo(() => {
     return getUsersColumns({
       t,
@@ -155,7 +151,6 @@ const UsersTable = (usersData) => {
     showUserSubscriptionsUserModal,
   ]);
 
-  // Handle compact mode by removing fixed positioning
   const tableColumns = useMemo(() => {
     return compactMode
       ? columns.map((col) => {
@@ -200,7 +195,6 @@ const UsersTable = (usersData) => {
         size='middle'
       />
 
-      {/* Modal components */}
       <PromoteUserModal
         visible={showPromoteModal}
         onCancel={() => setShowPromoteModal(false)}

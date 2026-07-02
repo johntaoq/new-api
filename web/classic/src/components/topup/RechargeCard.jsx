@@ -39,6 +39,7 @@ import { SiAlipay, SiWechat, SiStripe } from 'react-icons/si';
 import {
   CreditCard,
   Coins,
+  Gift,
   Wallet,
   BarChart2,
   TrendingUp,
@@ -88,6 +89,7 @@ const RechargeCard = ({
   statusLoading,
   topupInfo,
   onOpenHistory,
+  onOpenMonthlyStatement,
   enableWaffoTopUp,
   enableWaffoPancakeTopUp,
   subscriptionLoading = false,
@@ -145,8 +147,8 @@ const RechargeCard = ({
               </div>
 
               {/* 统计数据 */}
-              <div className='grid grid-cols-3 gap-6 mt-4'>
-                {/* 当前余额 */}
+              <div className='grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mt-4'>
+                {/* 总余额 */}
                 <div className='text-center'>
                   <div
                     className='text-base sm:text-2xl font-bold mb-2'
@@ -166,7 +168,57 @@ const RechargeCard = ({
                         fontSize: '12px',
                       }}
                     >
-                      {t('当前余额')}
+                      {t('总余额')}
+                    </Text>
+                  </div>
+                </div>
+
+                {/* 付费额度 */}
+                <div className='text-center'>
+                  <div
+                    className='text-base sm:text-2xl font-bold mb-2'
+                    style={{ color: 'white' }}
+                  >
+                    {renderQuota(userState?.user?.paid_quota || 0)}
+                  </div>
+                  <div className='flex items-center justify-center text-sm'>
+                    <CreditCard
+                      size={14}
+                      className='mr-1'
+                      style={{ color: 'rgba(255,255,255,0.8)' }}
+                    />
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.8)',
+                        fontSize: '12px',
+                      }}
+                    >
+                      {t('付费额度')}
+                    </Text>
+                  </div>
+                </div>
+
+                {/* 赠送额度 */}
+                <div className='text-center'>
+                  <div
+                    className='text-base sm:text-2xl font-bold mb-2'
+                    style={{ color: 'white' }}
+                  >
+                    {renderQuota(userState?.user?.gift_quota || 0)}
+                  </div>
+                  <div className='flex items-center justify-center text-sm'>
+                    <Gift
+                      size={14}
+                      className='mr-1'
+                      style={{ color: 'rgba(255,255,255,0.8)' }}
+                    />
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.8)',
+                        fontSize: '12px',
+                      }}
+                    >
+                      {t('赠送额度')}
                     </Text>
                   </div>
                 </div>
@@ -264,17 +316,20 @@ const RechargeCard = ({
                       step={1}
                       precision={0}
                       onChange={async (value) => {
-                        if (value && value >= 1) {
-                          setTopUpCount(value);
+                        const nextValue = Number(value);
+                        if (Number.isFinite(nextValue) && nextValue >= 1) {
+                          setTopUpCount(nextValue);
                           setSelectedPreset(null);
-                          await getAmount(value);
+                          if (nextValue >= minTopUp) {
+                            await getAmount(nextValue);
+                          }
                         }
                       }}
                       onBlur={(e) => {
                         const value = parseInt(e.target.value);
                         if (!value || value < 1) {
-                          setTopUpCount(1);
-                          getAmount(1);
+                          setTopUpCount(minTopUp);
+                          getAmount(minTopUp);
                         }
                       }}
                       formatter={(value) => (value ? `${value}` : '')}
@@ -660,8 +715,17 @@ const RechargeCard = ({
           icon={<Receipt size={16} />}
           theme='solid'
           onClick={onOpenHistory}
+          className='ml-auto'
         >
           {t('账单')}
+        </Button>
+        <Button
+          icon={<Receipt size={16} />}
+          theme='outline'
+          onClick={onOpenMonthlyStatement}
+          className='ml-2'
+        >
+          {t('月账单')}
         </Button>
       </div>
 

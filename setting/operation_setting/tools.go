@@ -144,6 +144,18 @@ func GetToolPrice(toolName string) float64 {
 	return GetToolPriceForModel(toolName, "")
 }
 
+func GetClaudeWebSearchPricePerThousand() float64 {
+	return GetToolPrice("web_search")
+}
+
+func GetWebSearchPricePerThousand(modelName string, contextSize string) float64 {
+	return GetToolPriceForModel("web_search_preview", modelName)
+}
+
+func GetFileSearchPricePerThousand() float64 {
+	return GetToolPrice("file_search")
+}
+
 // ---------------------------------------------------------------------------
 // GPT Image 1 per-call pricing (special: depends on quality + size)
 // ---------------------------------------------------------------------------

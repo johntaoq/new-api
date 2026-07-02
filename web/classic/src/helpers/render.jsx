@@ -73,6 +73,7 @@ import {
   CheckSquare,
   CreditCard,
   Layers,
+  ReceiptText,
   Gift,
   User,
   Settings,
@@ -80,6 +81,7 @@ import {
   Package,
   Server,
   CalendarClock,
+  Sparkles,
 } from 'lucide-react';
 import {
   SiAtlassian,
@@ -125,6 +127,10 @@ export function getLucideIcon(key, selected = false) {
       return <LayoutDashboard {...commonProps} color={iconColor} />;
     case 'playground':
       return <TerminalSquare {...commonProps} color={iconColor} />;
+    case 'image_playground':
+      return <ImageIcon {...commonProps} color={iconColor} />;
+    case 'ai_studio':
+      return <Sparkles {...commonProps} color={iconColor} />;
     case 'chat':
       return <MessageSquare {...commonProps} color={iconColor} />;
     case 'token':
@@ -139,6 +145,8 @@ export function getLucideIcon(key, selected = false) {
       return <CreditCard {...commonProps} color={iconColor} />;
     case 'channel':
       return <Layers {...commonProps} color={iconColor} />;
+    case 'billing':
+      return <ReceiptText {...commonProps} color={iconColor} />;
     case 'redemption':
       return <Gift {...commonProps} color={iconColor} />;
     case 'user':

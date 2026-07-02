@@ -162,7 +162,14 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	case constant.ChannelTypeCustom:
 		url := info.ChannelBaseUrl
 		url = strings.Replace(url, "{model}", info.UpstreamModelName, -1)
-		return url, nil
+		if isCustomFullRequestURL(url) {
+			return url, nil
+		}
+		requestURL := info.RequestURLPath
+		if strings.HasSuffix(strings.TrimRight(url, "/"), "/v1") && strings.HasPrefix(requestURL, "/v1/") {
+			requestURL = strings.TrimPrefix(requestURL, "/v1")
+		}
+		return relaycommon.GetFullRequestURL(strings.TrimRight(url, "/"), requestURL, info.ChannelType), nil
 	default:
 		if (info.RelayFormat == types.RelayFormatClaude || info.RelayFormat == types.RelayFormatGemini) &&
 			info.RelayMode != relayconstant.RelayModeResponses &&
@@ -171,6 +178,31 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 		}
 		return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, info.RequestURLPath, info.ChannelType), nil
 	}
+}
+
+func isCustomFullRequestURL(rawURL string) bool {
+	path := strings.ToLower(strings.TrimRight(strings.Split(rawURL, "?")[0], "/"))
+	fullEndpointSuffixes := []string{
+		"/chat/completions",
+		"/completions",
+		"/messages",
+		"/responses",
+		"/responses/compact",
+		"/images/generations",
+		"/images/edits",
+		"/edits",
+		"/embeddings",
+		"/audio/transcriptions",
+		"/audio/translations",
+		"/audio/speech",
+		"/rerank",
+	}
+	for _, suffix := range fullEndpointSuffixes {
+		if strings.HasSuffix(path, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *relaycommon.RelayInfo) error {
@@ -452,7 +484,7 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		// 写入所有非文件字段
 		if mf != nil {
 			for key, values := range mf.Value {
-				if key == "model" {
+				if key == "model" || key == "group" {
 					continue
 				}
 				for _, value := range values {

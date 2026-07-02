@@ -22,8 +22,7 @@ import { Button, Form } from '@douyinfe/semi-ui';
 import { IconSearch } from '@douyinfe/semi-icons';
 
 const ChannelsFilters = ({
-  setEditingChannel,
-  setShowEdit,
+  openCreateChannel,
   refresh,
   setShowColumnSelector,
   formInitValues,
@@ -44,12 +43,7 @@ const ChannelsFilters = ({
           theme='light'
           type='primary'
           className='w-full md:w-auto'
-          onClick={() => {
-            setEditingChannel({
-              id: undefined,
-            });
-            setShowEdit(true);
-          }}
+          onClick={openCreateChannel}
         >
           {t('添加渠道')}
         </Button>

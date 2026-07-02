@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -519,8 +520,7 @@ func AdminDisable2FA(c *gin.Context) {
 		return
 	}
 
-	myRole := c.GetInt("role")
-	if !canManageTargetRole(myRole, targetUser.Role) {
+	if !model.CanManageOpsTarget(c.GetInt("role"), c.GetString("staff_role"), targetUser) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "无权操作同级或更高级用户的2FA设置",
@@ -541,7 +541,10 @@ func AdminDisable2FA(c *gin.Context) {
 		return
 	}
 
-	recordManageAuditFor(c, userId, "user.2fa_disable", nil)
+	// 记录操作日志
+	adminId := c.GetInt("id")
+	model.RecordLog(userId, model.LogTypeManage,
+		fmt.Sprintf("管理员(ID:%d)强制禁用了用户的两步验证", adminId))
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

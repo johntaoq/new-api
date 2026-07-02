@@ -25,7 +25,13 @@ import { ChevronLeft } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import { useSidebar } from '../../hooks/common/useSidebar';
 import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime';
-import { isAdmin, isRoot, showError } from '../../helpers';
+import {
+  API,
+  authHeader,
+  hasAnyPermission,
+  hasPermission,
+  showError,
+} from '../../helpers';
 import SkeletonWrapper from './components/SkeletonWrapper';
 
 import { Nav, Divider, Button } from '@douyinfe/semi-ui';
@@ -33,6 +39,7 @@ import { Nav, Divider, Button } from '@douyinfe/semi-ui';
 const routerMap = {
   home: '/',
   channel: '/console/channel',
+  billing: '/console/billing',
   token: '/console/token',
   redemption: '/console/redemption',
   topup: '/console/topup',
@@ -48,6 +55,8 @@ const routerMap = {
   models: '/console/models',
   deployment: '/console/deployment',
   playground: '/console/playground',
+  image_playground: '/console/image-playground',
+  ai_studio: '/api/studio/open',
   personal: '/console/personal',
 };
 
@@ -67,6 +76,17 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const [openedKeys, setOpenedKeys] = useState([]);
   const location = useLocation();
   const [routerMapState, setRouterMapState] = useState(routerMap);
+  const canViewFinance = hasAnyPermission(
+    'finance.view',
+    'finance.write',
+    'finance.audit.view',
+    'system.manage',
+  );
+  const canWriteFinance = hasAnyPermission('finance.write', 'system.manage');
+  const canManageOps = hasAnyPermission('ops.manage', 'system.manage');
+  const canManageSystem = hasPermission('system.manage');
+  const showAdminSection =
+    canViewFinance || canWriteFinance || canManageOps || canManageSystem;
 
   const workspaceItems = useMemo(() => {
     const items = [
@@ -148,46 +168,52 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const adminItems = useMemo(() => {
     const items = [
       {
+        text: t('账务中心'),
+        itemKey: 'billing',
+        to: '/billing',
+        className: canViewFinance ? '' : 'tableHiddle',
+      },
+      {
         text: t('渠道管理'),
         itemKey: 'channel',
         to: '/channel',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps ? '' : 'tableHiddle',
       },
       {
         text: t('订阅管理'),
         itemKey: 'subscription',
         to: '/subscription',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps ? '' : 'tableHiddle',
       },
       {
         text: t('模型管理'),
         itemKey: 'models',
         to: '/console/models',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps ? '' : 'tableHiddle',
       },
       {
         text: t('模型部署'),
         itemKey: 'deployment',
         to: '/deployment',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps ? '' : 'tableHiddle',
       },
       {
         text: t('兑换码管理'),
         itemKey: 'redemption',
         to: '/redemption',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canWriteFinance ? '' : 'tableHiddle',
       },
       {
         text: t('用户管理'),
         itemKey: 'user',
         to: '/user',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: canManageOps || canWriteFinance ? '' : 'tableHiddle',
       },
       {
         text: t('系统设置'),
         itemKey: 'setting',
         to: '/setting',
-        className: isRoot() ? '' : 'tableHiddle',
+        className: canManageSystem ? '' : 'tableHiddle',
       },
     ];
 
@@ -198,14 +224,64 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     });
 
     return filteredItems;
-  }, [isAdmin(), isRoot(), t, isModuleVisible]);
+  }, [canManageOps, canManageSystem, canViewFinance, canWriteFinance, t, isModuleVisible]);
+
+  const openAIStudio = async () => {
+    const studioWindow = window.open('about:blank', '_blank');
+    if (studioWindow) {
+      studioWindow.opener = null;
+    }
+
+    try {
+      const res = await API.get('/api/studio/open', {
+        params: { format: 'json' },
+        headers: {
+          ...authHeader(),
+          Accept: 'application/json',
+        },
+        skipErrorHandler: true,
+      });
+
+      const { success, message, data } = res.data || {};
+      const targetUrl = data?.url;
+
+      if (!success || !targetUrl) {
+        if (studioWindow) {
+          studioWindow.close();
+        }
+        showError(message || '打开 AI STUDIO 失败');
+        return;
+      }
+
+      if (studioWindow) {
+        studioWindow.location.replace(targetUrl);
+      } else {
+        window.open(targetUrl, '_blank');
+      }
+    } catch (error) {
+      if (studioWindow) {
+        studioWindow.close();
+      }
+      showError(error?.response?.data?.message || error?.message || '打开 AI STUDIO 失败');
+    }
+  };
 
   const chatMenuItems = useMemo(() => {
     const items = [
       {
+        text: 'AI STUDIO',
+        itemKey: 'ai_studio',
+        to: '/api/studio/open',
+      },
+      {
         text: t('操练场'),
         itemKey: 'playground',
         to: '/playground',
+      },
+      {
+        text: '图片生成',
+        itemKey: 'image_playground',
+        to: '/image-playground',
       },
       {
         text: t('聊天'),
@@ -402,7 +478,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         type='sidebar'
         className=''
         collapsed={collapsed}
-        showAdmin={isAdmin()}
+          showAdmin={showAdminSection}
       >
         <Nav
           className='sidebar-nav'
@@ -418,7 +494,37 @@ const SiderBar = ({ onNavigate = () => {} }) => {
               routerMapState[props.itemKey] || routerMap[props.itemKey];
 
             // 如果没有路由，直接返回元素
-            if (!to) return itemElement;
+             if (!to) return itemElement;
+
+             if (props.itemKey === 'ai_studio') {
+               return (
+                 <a
+                   style={{ textDecoration: 'none' }}
+                   href={to}
+                   onClick={(event) => {
+                     event.preventDefault();
+                     onNavigate();
+                     openAIStudio();
+                   }}
+                 >
+                   {itemElement}
+                 </a>
+               );
+             }
+
+             if (to.startsWith('/api/')) {
+               return (
+                 <a
+                  style={{ textDecoration: 'none' }}
+                  href={to}
+                  target='_blank'
+                  rel='noreferrer'
+                  onClick={onNavigate}
+                >
+                  {itemElement}
+                </a>
+              );
+            }
 
             return (
               <Link
@@ -480,7 +586,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
           )}
 
           {/* 管理员区域 - 只在管理员时显示且配置允许时显示 */}
-          {isAdmin() && hasSectionVisibleModules('admin') && (
+          {showAdminSection && hasSectionVisibleModules('admin') && (
             <>
               <Divider className='sidebar-divider' />
               <div>

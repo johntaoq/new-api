@@ -51,6 +51,16 @@ export const useDashboardStats = (
           {
             title: t('当前余额'),
             value: renderQuota(userState?.user?.quota),
+            details: [
+              {
+                label: t('付费额度'),
+                value: renderQuota(userState?.user?.paid_quota || 0),
+              },
+              {
+                label: t('赠送额度'),
+                value: renderQuota(userState?.user?.gift_quota || 0),
+              },
+            ],
             icon: <IconMoneyExchangeStroked />,
             avatarColor: 'blue',
             trendData: [],
@@ -135,6 +145,8 @@ export const useDashboardStats = (
     ],
     [
       userState?.user?.quota,
+      userState?.user?.paid_quota,
+      userState?.user?.gift_quota,
       userState?.user?.used_quota,
       userState?.user?.request_count,
       times,

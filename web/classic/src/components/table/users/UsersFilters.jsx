@@ -29,6 +29,7 @@ const UsersFilters = ({
   activePage,
   pageSize,
   groupOptions,
+  canManageOps,
   loading,
   searching,
   t,
@@ -65,29 +66,30 @@ const UsersFilters = ({
           <Form.Input
             field='searchKeyword'
             prefix={<IconSearch />}
-            placeholder={t('支持搜索用户的 ID、用户名、显示名称和邮箱地址')}
+            placeholder={t('支持搜索用户 ID、用户名、显示名称和邮箱地址')}
             showClear
             pure
             size='small'
           />
         </div>
-        <div className='w-full md:w-48'>
-          <Form.Select
-            field='searchGroup'
-            placeholder={t('选择分组')}
-            optionList={groupOptions}
-            onChange={(value) => {
-              // Group change triggers automatic search
-              setTimeout(() => {
-                searchUsers(1, pageSize);
-              }, 100);
-            }}
-            className='w-full'
-            showClear
-            pure
-            size='small'
-          />
-        </div>
+        {canManageOps ? (
+          <div className='w-full md:w-48'>
+            <Form.Select
+              field='searchGroup'
+              placeholder={t('选择分组')}
+              optionList={groupOptions}
+              onChange={() => {
+                setTimeout(() => {
+                  searchUsers(1, pageSize);
+                }, 100);
+              }}
+              className='w-full'
+              showClear
+              pure
+              size='small'
+            />
+          </div>
+        ) : null}
         <div className='flex gap-2 w-full md:w-auto'>
           <Button
             type='tertiary'

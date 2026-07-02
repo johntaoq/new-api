@@ -30,6 +30,11 @@ import {
 } from '@douyinfe/semi-ui';
 import { API, showSuccess, showError } from '../../../helpers';
 import { StatusContext } from '../../../context/Status';
+import {
+  enforceRequiredSidebarConfig,
+  isRequiredSidebarModule,
+  isRequiredSidebarSection,
+} from '../../../hooks/common/useSidebar';
 
 const { Text } = Typography;
 
@@ -39,71 +44,12 @@ export default function SettingsSidebarModulesAdmin(props) {
   const [statusState, statusDispatch] = useContext(StatusContext);
 
   // 左侧边栏模块管理状态（管理员全局控制）
-  const [sidebarModulesAdmin, setSidebarModulesAdmin] = useState({
-    chat: {
-      enabled: true,
-      playground: true,
-      chat: true,
-    },
-    console: {
-      enabled: true,
-      detail: true,
-      token: true,
-      log: true,
-      midjourney: true,
-      task: true,
-    },
-    personal: {
-      enabled: true,
-      topup: true,
-      personal: true,
-    },
-    admin: {
-      enabled: true,
-      channel: true,
-      models: true,
-      deployment: true,
-      redemption: true,
-      user: true,
-      subscription: true,
-      setting: true,
-    },
-  });
-
-  // 处理区域级别开关变更
-  function handleSectionChange(sectionKey) {
-    return (checked) => {
-      const newModules = {
-        ...sidebarModulesAdmin,
-        [sectionKey]: {
-          ...sidebarModulesAdmin[sectionKey],
-          enabled: checked,
-        },
-      };
-      setSidebarModulesAdmin(newModules);
-    };
-  }
-
-  // 处理功能级别开关变更
-  function handleModuleChange(sectionKey, moduleKey) {
-    return (checked) => {
-      const newModules = {
-        ...sidebarModulesAdmin,
-        [sectionKey]: {
-          ...sidebarModulesAdmin[sectionKey],
-          [moduleKey]: checked,
-        },
-      };
-      setSidebarModulesAdmin(newModules);
-    };
-  }
-
-  // 重置为默认配置
-  function resetSidebarModules() {
-    const defaultModules = {
+  const [sidebarModulesAdmin, setSidebarModulesAdmin] = useState(
+    enforceRequiredSidebarConfig({
       chat: {
         enabled: true,
         playground: true,
+        image_playground: true,
         chat: true,
       },
       console: {
@@ -121,6 +67,77 @@ export default function SettingsSidebarModulesAdmin(props) {
       },
       admin: {
         enabled: true,
+        billing: true,
+        channel: true,
+        models: true,
+        deployment: true,
+        redemption: true,
+        user: true,
+        subscription: true,
+        setting: true,
+      },
+    }),
+  );
+
+  // 处理区域级别开关变更
+  function handleSectionChange(sectionKey) {
+    return (checked) => {
+      if (isRequiredSidebarSection(sectionKey) && !checked) {
+        return;
+      }
+      const newModules = {
+        ...sidebarModulesAdmin,
+        [sectionKey]: {
+          ...sidebarModulesAdmin[sectionKey],
+          enabled: checked,
+        },
+      };
+      setSidebarModulesAdmin(enforceRequiredSidebarConfig(newModules));
+    };
+  }
+
+  // 处理功能级别开关变更
+  function handleModuleChange(sectionKey, moduleKey) {
+    return (checked) => {
+      if (isRequiredSidebarModule(sectionKey, moduleKey) && !checked) {
+        return;
+      }
+      const newModules = {
+        ...sidebarModulesAdmin,
+        [sectionKey]: {
+          ...sidebarModulesAdmin[sectionKey],
+          [moduleKey]: checked,
+        },
+      };
+      setSidebarModulesAdmin(enforceRequiredSidebarConfig(newModules));
+    };
+  }
+
+  // 重置为默认配置
+  function resetSidebarModules() {
+    const defaultModules = {
+      chat: {
+        enabled: true,
+        playground: true,
+        image_playground: true,
+        chat: true,
+      },
+      console: {
+        enabled: true,
+        detail: true,
+        token: true,
+        log: true,
+        midjourney: true,
+        task: true,
+      },
+      personal: {
+        enabled: true,
+        topup: true,
+        personal: true,
+      },
+      admin: {
+        enabled: true,
+        billing: true,
         channel: true,
         models: true,
         deployment: true,
@@ -130,7 +147,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         setting: true,
       },
     };
-    setSidebarModulesAdmin(defaultModules);
+    setSidebarModulesAdmin(enforceRequiredSidebarConfig(defaultModules));
     showSuccess(t('已重置为默认配置'));
   }
 
@@ -138,9 +155,11 @@ export default function SettingsSidebarModulesAdmin(props) {
   async function onSubmit() {
     setLoading(true);
     try {
+      const normalizedConfig = enforceRequiredSidebarConfig(sidebarModulesAdmin);
+      setSidebarModulesAdmin(normalizedConfig);
       const res = await API.put('/api/option/', {
         key: 'SidebarModulesAdmin',
-        value: JSON.stringify(sidebarModulesAdmin),
+        value: JSON.stringify(normalizedConfig),
       });
       const { success, message } = res.data;
       if (success) {
@@ -151,7 +170,7 @@ export default function SettingsSidebarModulesAdmin(props) {
           type: 'set',
           payload: {
             ...statusState.status,
-            SidebarModulesAdmin: JSON.stringify(sidebarModulesAdmin),
+            SidebarModulesAdmin: JSON.stringify(normalizedConfig),
           },
         });
 
@@ -174,11 +193,11 @@ export default function SettingsSidebarModulesAdmin(props) {
     if (props.options && props.options.SidebarModulesAdmin) {
       try {
         const modules = JSON.parse(props.options.SidebarModulesAdmin);
-        setSidebarModulesAdmin(modules);
+        setSidebarModulesAdmin(enforceRequiredSidebarConfig(modules));
       } catch (error) {
         // 使用默认配置
         const defaultModules = {
-          chat: { enabled: true, playground: true, chat: true },
+          chat: { enabled: true, playground: true, image_playground: true, chat: true },
           console: {
             enabled: true,
             detail: true,
@@ -190,6 +209,7 @@ export default function SettingsSidebarModulesAdmin(props) {
           personal: { enabled: true, topup: true, personal: true },
           admin: {
             enabled: true,
+            billing: true,
             channel: true,
             models: true,
             deployment: true,
@@ -199,7 +219,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             setting: true,
           },
         };
-        setSidebarModulesAdmin(defaultModules);
+        setSidebarModulesAdmin(enforceRequiredSidebarConfig(defaultModules));
       }
     }
   }, [props.options]);
@@ -217,6 +237,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           description: t('AI模型测试环境'),
         },
         { key: 'chat', title: t('聊天'), description: t('聊天会话管理') },
+        {
+          key: 'image_playground',
+          title: '图片生成',
+          description: '图片生成测试环境',
+        },
       ],
     },
     {
@@ -330,6 +355,7 @@ export default function SettingsSidebarModulesAdmin(props) {
                 checked={sidebarModulesAdmin[section.key]?.enabled}
                 onChange={handleSectionChange(section.key)}
                 size='default'
+                disabled={isRequiredSidebarSection(section.key)}
               />
             </div>
 
@@ -386,7 +412,12 @@ export default function SettingsSidebarModulesAdmin(props) {
                           }
                           onChange={handleModuleChange(section.key, module.key)}
                           size='default'
-                          disabled={!sidebarModulesAdmin[section.key]?.enabled}
+                          disabled={
+                            isRequiredSidebarModule(
+                              section.key,
+                              module.key,
+                            ) || !sidebarModulesAdmin[section.key]?.enabled
+                          }
                         />
                       </div>
                     </div>

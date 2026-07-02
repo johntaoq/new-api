@@ -30,49 +30,54 @@ import {
 } from '@douyinfe/semi-ui';
 import { IconMore } from '@douyinfe/semi-icons';
 import {
+  hasAnyPermission,
   renderGroup,
   renderNumber,
   renderQuota,
-  timestamp2string,
 } from '../../../helpers';
 
-const renderTimestamp = (text) => (text ? timestamp2string(text) : '-');
+const renderRole = (record, t) => {
+  const effectiveRole =
+    record.effective_staff_role ||
+    record.staff_role ||
+    (record.role >= 100 ? 'root' : record.role >= 10 ? 'admin' : '');
 
-/**
- * Render user role
- */
-const renderRole = (role, t) => {
-  switch (role) {
-    case 1:
-      return (
-        <Tag color='blue' shape='circle'>
-          {t('普通用户')}
-        </Tag>
-      );
-    case 10:
-      return (
-        <Tag color='yellow' shape='circle'>
-          {t('管理员')}
-        </Tag>
-      );
-    case 100:
-      return (
-        <Tag color='orange' shape='circle'>
-          {t('超级管理员')}
-        </Tag>
-      );
-    default:
-      return (
-        <Tag color='red' shape='circle'>
-          {t('未知身份')}
-        </Tag>
-      );
+  if (record.role >= 100) {
+    return (
+      <Tag color='orange' shape='circle'>
+        {t('超级管理员')}
+      </Tag>
+    );
   }
+
+  if (effectiveRole === 'admin') {
+    return (
+      <Tag color='yellow' shape='circle'>
+        {t('运营管理员')}
+      </Tag>
+    );
+  }
+  if (effectiveRole === 'finance') {
+    return (
+      <Tag color='cyan' shape='circle'>
+        {t('财务')}
+      </Tag>
+    );
+  }
+  if (effectiveRole === 'audit') {
+    return (
+      <Tag color='violet' shape='circle'>
+        {t('审计')}
+      </Tag>
+    );
+  }
+  return (
+    <Tag color='blue' shape='circle'>
+      {t('普通用户')}
+    </Tag>
+  );
 };
 
-/**
- * Render username with remark
- */
 const renderUsername = (text, record) => {
   const remark = record.remark;
   if (!remark) {
@@ -80,7 +85,7 @@ const renderUsername = (text, record) => {
   }
   const maxLen = 10;
   const displayRemark =
-    remark.length > maxLen ? remark.slice(0, maxLen) + '…' : remark;
+    remark.length > maxLen ? `${remark.slice(0, maxLen)}...` : remark;
   return (
     <Space spacing={2}>
       <span>{text}</span>
@@ -99,13 +104,9 @@ const renderUsername = (text, record) => {
   );
 };
 
-/**
- * Render user statistics
- */
-const renderStatistics = (text, record, showEnableDisableModal, t) => {
+const renderStatistics = (record, t) => {
   const isDeleted = record.DeletedAt !== null;
 
-  // Determine tag text & color like original status column
   let tagColor = 'grey';
   let tagText = t('未知状态');
   if (isDeleted) {
@@ -119,12 +120,6 @@ const renderStatistics = (text, record, showEnableDisableModal, t) => {
     tagText = t('已禁用');
   }
 
-  const content = (
-    <Tag color={tagColor} shape='circle' size='small'>
-      {tagText}
-    </Tag>
-  );
-
   const tooltipContent = (
     <div className='text-xs'>
       <div>
@@ -135,16 +130,17 @@ const renderStatistics = (text, record, showEnableDisableModal, t) => {
 
   return (
     <Tooltip content={tooltipContent} position='top'>
-      {content}
+      <Tag color={tagColor} shape='circle' size='small'>
+        {tagText}
+      </Tag>
     </Tooltip>
   );
 };
 
-// Render separate quota usage column
-const renderQuotaUsage = (text, record, t) => {
+const renderQuotaUsage = (record, t) => {
   const { Paragraph } = Typography;
-  const used = parseInt(record.used_quota) || 0;
-  const remain = parseInt(record.quota) || 0;
+  const used = parseInt(record.used_quota, 10) || 0;
+  const remain = parseInt(record.quota, 10) || 0;
   const total = used + remain;
   const percent = total > 0 ? (remain / total) * 100 : 0;
   const popoverContent = (
@@ -164,7 +160,9 @@ const renderQuotaUsage = (text, record, t) => {
     <Popover content={popoverContent} position='top'>
       <Tag color='white' shape='circle'>
         <div className='flex flex-col items-end'>
-          <span className='text-xs leading-none'>{`${renderQuota(remain)} / ${renderQuota(total)}`}</span>
+          <span className='text-xs leading-none'>
+            {`${renderQuota(remain)} / ${renderQuota(total)}`}
+          </span>
           <Progress
             percent={percent}
             aria-label='quota usage'
@@ -177,10 +175,7 @@ const renderQuotaUsage = (text, record, t) => {
   );
 };
 
-/**
- * Render invite information
- */
-const renderInviteInfo = (text, record, t) => {
+const renderInviteInfo = (record, t) => {
   return (
     <div>
       <Space spacing={1}>
@@ -200,17 +195,11 @@ const renderInviteInfo = (text, record, t) => {
   );
 };
 
-/**
- * Render operations column
- */
 const renderOperations = (
-  text,
   record,
   {
     setEditingUser,
     setShowEditUser,
-    showPromoteModal,
-    showDemoteModal,
     showEnableDisableModal,
     showDeleteModal,
     showResetPasskeyModal,
@@ -223,94 +212,90 @@ const renderOperations = (
     return <></>;
   }
 
-  const moreMenu = [
-    {
-      node: 'item',
-      name: t('订阅管理'),
-      onClick: () => showUserSubscriptionsModal(record),
-    },
-    {
-      node: 'divider',
-    },
-    {
-      node: 'item',
-      name: t('重置 Passkey'),
-      onClick: () => showResetPasskeyModal(record),
-    },
-    {
-      node: 'item',
-      name: t('重置 2FA'),
-      onClick: () => showResetTwoFAModal(record),
-    },
-    {
-      node: 'divider',
-    },
-    {
-      node: 'item',
-      name: t('注销'),
-      type: 'danger',
-      onClick: () => showDeleteModal(record),
-    },
-  ];
+  const canManageOps = hasAnyPermission('ops.manage', 'system.manage');
+  const canWriteFinance = hasAnyPermission('finance.write', 'system.manage');
+  const canViewUserEditor = canManageOps || canWriteFinance;
+
+  if (!canViewUserEditor) {
+    return <></>;
+  }
+
+  const financeOnly = canWriteFinance && !canManageOps;
+  const moreMenu = canManageOps
+    ? [
+        {
+          node: 'item',
+          name: t('订阅管理'),
+          onClick: () => showUserSubscriptionsModal(record),
+        },
+        {
+          node: 'divider',
+        },
+        {
+          node: 'item',
+          name: t('重置 Passkey'),
+          onClick: () => showResetPasskeyModal(record),
+        },
+        {
+          node: 'item',
+          name: t('重置 2FA'),
+          onClick: () => showResetTwoFAModal(record),
+        },
+        {
+          node: 'divider',
+        },
+        {
+          node: 'item',
+          name: t('注销'),
+          type: 'danger',
+          onClick: () => showDeleteModal(record),
+        },
+      ]
+    : [];
 
   return (
     <Space>
-      {record.status === 1 ? (
-        <Button
-          type='danger'
-          size='small'
-          onClick={() => showEnableDisableModal(record, 'disable')}
-        >
-          {t('禁用')}
-        </Button>
-      ) : (
-        <Button
-          size='small'
-          onClick={() => showEnableDisableModal(record, 'enable')}
-        >
-          {t('启用')}
-        </Button>
-      )}
+      {canManageOps ? (
+        record.status === 1 ? (
+          <Button
+            type='danger'
+            size='small'
+            onClick={() => showEnableDisableModal(record, 'disable')}
+          >
+            {t('禁用')}
+          </Button>
+        ) : (
+          <Button
+            size='small'
+            onClick={() => showEnableDisableModal(record, 'enable')}
+          >
+            {t('启用')}
+          </Button>
+        )
+      ) : null}
       <Button
-        type='tertiary'
+        type={financeOnly ? 'primary' : 'tertiary'}
         size='small'
         onClick={() => {
           setEditingUser(record);
           setShowEditUser(true);
         }}
       >
-        {t('编辑')}
+        {financeOnly ? t('查看/调账') : t('编辑')}
       </Button>
-      <Button
-        type='warning'
-        size='small'
-        onClick={() => showPromoteModal(record)}
-      >
-        {t('提升')}
-      </Button>
-      <Button
-        type='secondary'
-        size='small'
-        onClick={() => showDemoteModal(record)}
-      >
-        {t('降级')}
-      </Button>
-      <Dropdown menu={moreMenu} trigger='click' position='bottomRight'>
-        <Button type='tertiary' size='small' icon={<IconMore />} />
-      </Dropdown>
+      {canManageOps ? (
+        <Dropdown menu={moreMenu} trigger='click' position='bottomRight'>
+          <Button type='tertiary' size='small' icon={<IconMore />} />
+        </Dropdown>
+      ) : null}
     </Space>
   );
 };
 
-/**
- * Get users table column definitions
- */
 export const getUsersColumns = ({
   t,
   setEditingUser,
   setShowEditUser,
-  showPromoteModal,
-  showDemoteModal,
   showEnableDisableModal,
   showDeleteModal,
   showResetPasskeyModal,
@@ -330,54 +315,37 @@ export const getUsersColumns = ({
     {
       title: t('状态'),
       dataIndex: 'info',
-      render: (text, record, index) =>
-        renderStatistics(text, record, showEnableDisableModal, t),
+      render: (text, record) => renderStatistics(record, t),
     },
     {
       title: t('剩余额度/总额度'),
       key: 'quota_usage',
-      render: (text, record) => renderQuotaUsage(text, record, t),
+      render: (text, record) => renderQuotaUsage(record, t),
     },
     {
       title: t('分组'),
       dataIndex: 'group',
-      render: (text, record, index) => {
-        return <div>{renderGroup(text)}</div>;
-      },
+      render: (text) => <div>{renderGroup(text)}</div>,
     },
     {
-      title: t('角色'),
-      dataIndex: 'role',
-      render: (text, record, index) => {
-        return <div>{renderRole(text, t)}</div>;
-      },
+      title: t('后台职责'),
+      dataIndex: 'staff_role',
+      render: (text, record) => <div>{renderRole(record, t)}</div>,
     },
     {
       title: t('邀请信息'),
       dataIndex: 'invite',
-      render: (text, record, index) => renderInviteInfo(text, record, t),
-    },
-    {
-      title: t('创建时间'),
-      dataIndex: 'created_at',
-      render: renderTimestamp,
-    },
-    {
-      title: t('最后登录'),
-      dataIndex: 'last_login_at',
-      render: renderTimestamp,
+      render: (text, record) => renderInviteInfo(record, t),
     },
     {
       title: '',
       dataIndex: 'operate',
       fixed: 'right',
-      width: 200,
-      render: (text, record, index) =>
-        renderOperations(text, record, {
+      width: 220,
+      render: (text, record) =>
+        renderOperations(record, {
           setEditingUser,
           setShowEditUser,
-          showPromoteModal,
-          showDemoteModal,
           showEnableDisableModal,
           showDeleteModal,
           showResetPasskeyModal,

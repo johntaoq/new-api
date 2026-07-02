@@ -32,9 +32,12 @@ import {
   renderQuota,
   stringToColor,
 } from '../../../../helpers';
-import { Coins, BarChart2, Users } from 'lucide-react';
+import { Coins, BarChart2, Users, CreditCard, Gift } from 'lucide-react';
 
 const UserInfoHeader = ({ t, userState }) => {
+  const paidQuota = userState?.user?.paid_quota || 0;
+  const giftQuota = userState?.user?.gift_quota || 0;
+
   const getUsername = () => {
     if (userState.user) {
       return userState.user.username;
@@ -120,8 +123,22 @@ const UserInfoHeader = ({ t, userState }) => {
       <div className='flex items-start justify-between gap-6'>
         {/* 当前余额显示 */}
         <Badge count={t('当前余额')} position='rightTop' type='danger'>
-          <div className='text-2xl sm:text-3xl md:text-4xl font-bold tracking-wide'>
-            {renderQuota(userState?.user?.quota)}
+          <div className='space-y-3'>
+            <div className='text-2xl sm:text-3xl md:text-4xl font-bold tracking-wide'>
+              {renderQuota(userState?.user?.quota)}
+            </div>
+            <div className='flex flex-wrap gap-2'>
+              <div className='flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-700'>
+                <CreditCard size={14} />
+                <span>{t('付费额度')}</span>
+                <span className='font-semibold'>{renderQuota(paidQuota)}</span>
+              </div>
+              <div className='flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-sm text-amber-700'>
+                <Gift size={14} />
+                <span>{t('赠送额度')}</span>
+                <span className='font-semibold'>{renderQuota(giftQuota)}</span>
+              </div>
+            </div>
           </div>
         </Badge>
 

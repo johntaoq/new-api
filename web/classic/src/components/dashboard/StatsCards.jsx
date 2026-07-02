@@ -43,68 +43,100 @@ const StatsCards = ({
             title={group.title}
           >
             <div className='space-y-4'>
-              {group.items.map((item, itemIdx) => (
-                <div
-                  key={itemIdx}
-                  className='flex items-center justify-between cursor-pointer'
-                  onClick={item.onClick}
-                >
-                  <div className='flex items-center'>
-                    <Avatar
-                      className='mr-3'
-                      size='small'
-                      color={item.avatarColor}
+              {group.items.map((item, itemIdx) => {
+                const hasDetails = item.details?.length > 0;
+
+                return (
+                  <div
+                    key={itemIdx}
+                    className='cursor-pointer rounded-xl'
+                    onClick={item.onClick}
+                  >
+                    <div
+                      className={`flex justify-between gap-3 ${hasDetails ? 'items-start' : 'items-center'}`}
                     >
-                      {item.icon}
-                    </Avatar>
-                    <div>
-                      <div className='text-xs text-gray-500'>{item.title}</div>
-                      <div className='text-lg font-semibold'>
-                        <Skeleton
-                          loading={loading}
-                          active
-                          placeholder={
-                            <Skeleton.Paragraph
-                              active
-                              rows={1}
-                              style={{
-                                width: '65px',
-                                height: '24px',
-                                marginTop: '4px',
-                              }}
-                            />
-                          }
+                      <div className='flex flex-1 min-w-0 items-start'>
+                        <Avatar
+                          className='mr-3 shrink-0'
+                          size='small'
+                          color={item.avatarColor}
                         >
-                          {item.value}
-                        </Skeleton>
+                          {item.icon}
+                        </Avatar>
+                        <div className='min-w-0 flex-1'>
+                          <div className='text-xs text-gray-500'>
+                            {item.title}
+                          </div>
+                          <div className='text-lg font-semibold leading-tight break-all'>
+                            <Skeleton
+                              loading={loading}
+                              active
+                              placeholder={
+                                <Skeleton.Paragraph
+                                  active
+                                  rows={1}
+                                  style={{
+                                    width: '65px',
+                                    height: '24px',
+                                    marginTop: '4px',
+                                  }}
+                                />
+                              }
+                            >
+                              {item.value}
+                            </Skeleton>
+                          </div>
+                          {hasDetails && (
+                            <div className='mt-2 space-y-1 text-sm text-gray-500'>
+                              {item.details.map((detail) => (
+                                <div
+                                  key={detail.label}
+                                  className='flex items-center justify-between gap-3'
+                                >
+                                  <span className='shrink-0'>
+                                    {detail.label}
+                                  </span>
+                                  <span className='min-w-0 text-right font-medium text-gray-700 break-all'>
+                                    {detail.value}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className='shrink-0 self-start'>
+                        {item.title === t('当前余额') ? (
+                          <Tag
+                            color='white'
+                            shape='circle'
+                            size='default'
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate('/console/topup');
+                            }}
+                          >
+                            {t('充值')}
+                          </Tag>
+                        ) : (
+                          (loading ||
+                            (item.trendData && item.trendData.length > 0)) && (
+                            <div className='w-24 h-10'>
+                              <VChart
+                                spec={getTrendSpec(
+                                  item.trendData,
+                                  item.trendColor,
+                                )}
+                                option={CHART_CONFIG}
+                              />
+                            </div>
+                          )
+                        )}
                       </div>
                     </div>
                   </div>
-                  {item.title === t('当前余额') ? (
-                    <Tag
-                      color='white'
-                      shape='circle'
-                      size='large'
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate('/console/topup');
-                      }}
-                    >
-                      {t('充值')}
-                    </Tag>
-                  ) : (
-                    (loading ||
-                      (item.trendData && item.trendData.length > 0)) && (
-                      <div className='w-24 h-10'>
-                        <VChart
-                          spec={getTrendSpec(item.trendData, item.trendColor)}
-                          option={CHART_CONFIG}
-                        />
-                      </div>
-                    )
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         ))}
