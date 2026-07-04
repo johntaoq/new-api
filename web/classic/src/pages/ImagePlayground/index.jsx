@@ -103,12 +103,28 @@ const isImageModelName = (modelName = '') => {
   return imageModelNamePatterns.some((pattern) => normalized.includes(pattern));
 };
 
-const isEditCapableModel = (modelName = '') =>
-  modelName.toLowerCase().includes('gpt-image');
+const isMaiReferenceImageFile = (file) => {
+  const type = (file?.type || '').toLowerCase();
+  const name = file?.name || '';
+  return (
+    type === 'image/png' ||
+    type === 'image/jpeg' ||
+    /\.(png|jpe?g)$/i.test(name)
+  );
+};
+
+const isMaiImage25Model = (modelName = '') =>
+  modelName.toLowerCase().includes('mai-image-2.5');
+
+const isEditCapableModel = (modelName = '') => {
+  const normalized = modelName.toLowerCase();
+  return normalized.includes('gpt-image') || isMaiImage25Model(normalized);
+};
 
 const getImageModelProfile = (modelName = '') => {
   const normalized = modelName.toLowerCase();
   if (normalized.includes('mai-image')) {
+    const supportsImageEdit = isMaiImage25Model(modelName);
     return {
       kind: 'mai',
       sizeOptions: maiImageSizeOptions,
@@ -116,7 +132,7 @@ const getImageModelProfile = (modelName = '') => {
       supportsQuality: false,
       supportsN: false,
       requestShape: 'width-height',
-      maxReferenceImages: 0,
+      maxReferenceImages: supportsImageEdit ? 1 : 0,
     };
   }
   if (normalized.includes('gpt-image-2')) {
@@ -426,9 +442,16 @@ const ImagePlayground = () => {
       return;
     }
 
-    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    let imageFiles = files.filter((file) => file.type.startsWith('image/'));
     if (imageFiles.length !== files.length) {
       Toast.warning('只能上传图片文件');
+    }
+    if (selectedModelProfile.kind === 'mai') {
+      const beforeFilterCount = imageFiles.length;
+      imageFiles = imageFiles.filter(isMaiReferenceImageFile);
+      if (imageFiles.length !== beforeFilterCount) {
+        Toast.warning('MAI-Image-2.5 编辑仅支持 PNG 或 JPEG 参考图');
+      }
     }
     const remainingSlots = maxReferenceImages - referenceImages.length;
     if (remainingSlots <= 0) {
@@ -461,7 +484,7 @@ const ImagePlayground = () => {
       return;
     }
     if (!canEditSelectedModel || maxReferenceImages <= 0) {
-      Toast.warning('当前模型不支持参考图改图，请切换到 gpt-image 系列模型');
+      Toast.warning('当前模型不支持参考图改图，请切换到 gpt-image 或 MAI-Image-2.5 系列模型');
       return;
     }
     if (referenceImages.length >= maxReferenceImages) {
@@ -594,7 +617,7 @@ const ImagePlayground = () => {
       return;
     }
     if (referenceImages.length > 0 && !canEditSelectedModel) {
-      Toast.warning('当前模型不支持参考图改图，请选择 gpt-image 系列模型');
+      Toast.warning('当前模型不支持参考图改图，请选择 gpt-image 或 MAI-Image-2.5 系列模型');
       return;
     }
 
@@ -610,10 +633,12 @@ const ImagePlayground = () => {
         const formData = new FormData();
         formData.append('model', model);
         formData.append('prompt', trimmedPrompt);
-        formData.append('n', String(n));
-        formData.append('size', size);
-        if (selectedModelProfile.supportsQuality && quality !== 'auto') {
-          formData.append('quality', quality);
+        if (selectedModelProfile.kind !== 'mai') {
+          formData.append('n', String(n));
+          formData.append('size', size);
+          if (selectedModelProfile.supportsQuality && quality !== 'auto') {
+            formData.append('quality', quality);
+          }
         }
         if (group) {
           formData.append('group', group);
@@ -729,10 +754,10 @@ const ImagePlayground = () => {
                   <div className='mt-3 rounded-2xl border-2 border-red-500 bg-red-50 px-4 py-3 text-red-700 shadow-sm shadow-red-100'>
                     <div className='mb-1 flex items-center gap-2 text-base font-extrabold'>
                       <AlertTriangle size={18} strokeWidth={2.6} />
-                      GPT 生图扣费提醒
+                      生图扣费提醒
                     </div>
                     <div className='text-sm font-bold leading-6'>
-                      GPT生图需要超过5分钟，请不要离开页面。离开后如果后台生图成功依然会扣费，账户扣费不退款。
+                      生图可能需要超过5分钟，请不要离开页面。离开后如果后台生图成功依然会扣费，账户扣费不退款。
                     </div>
                   </div>
                 ) : null}
@@ -818,7 +843,11 @@ const ImagePlayground = () => {
                     : '当前模型不支持参考图改图'}
                   <input
                     type='file'
-                    accept='image/*'
+                    accept={
+                      selectedModelProfile.kind === 'mai'
+                        ? 'image/png,image/jpeg'
+                        : 'image/*'
+                    }
                     multiple
                     className='hidden'
                     disabled={!canEditSelectedModel}
@@ -827,7 +856,7 @@ const ImagePlayground = () => {
                 </label>
                 {!canEditSelectedModel ? (
                   <div className='mt-2 text-xs text-gray-500'>
-                    请选择 gpt-image 系列模型启用参考图改图。
+                    请选择 gpt-image 或 MAI-Image-2.5 系列模型启用参考图改图。
                   </div>
                 ) : null}
                 {referenceImages.length > 0 ? (

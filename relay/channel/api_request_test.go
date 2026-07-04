@@ -1,8 +1,11 @@
 package channel
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -190,4 +193,52 @@ func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.
 	require.Equal(t, "Codex CLI", upstreamReq.Header.Get("Originator"))
 	require.Equal(t, "sess-123", upstreamReq.Header.Get("Session_id"))
 	require.Empty(t, upstreamReq.Header.Get("X-Codex-Beta-Features"))
+}
+
+func TestApplyOutboundContentLengthSendsFixedLengthBody(t *testing.T) {
+	t.Parallel()
+
+	type capturedRequest struct {
+		body             string
+		contentLength    int64
+		contentLengthHdr string
+		transferEncoding []string
+		readErr          error
+	}
+
+	captured := make(chan capturedRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		captured <- capturedRequest{
+			body:             string(body),
+			contentLength:    r.ContentLength,
+			contentLengthHdr: r.Header.Get("Content-Length"),
+			transferEncoding: append([]string(nil), r.TransferEncoding...),
+			readErr:          err,
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	payload := `{"model":"MAI-Image-2.5"}`
+	requestBody := struct{ io.Reader }{strings.NewReader(payload)}
+	upstreamReq, err := http.NewRequest(http.MethodPost, server.URL, requestBody)
+	require.NoError(t, err)
+	require.NotEqual(t, int64(len(payload)), upstreamReq.ContentLength)
+
+	info := &relaycommon.RelayInfo{}
+	info.UpstreamRequestBodySize = int64(len(payload))
+	applyOutboundContentLength(upstreamReq, info)
+
+	resp, err := http.DefaultClient.Do(upstreamReq)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	got := <-captured
+	require.NoError(t, got.readErr)
+	require.Equal(t, payload, got.body)
+	require.Equal(t, int64(len(payload)), got.contentLength)
+	require.Equal(t, strconv.Itoa(len(payload)), got.contentLengthHdr)
+	require.Empty(t, got.transferEncoding)
 }

@@ -287,6 +287,14 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 	}
 }
 
+func applyOutboundContentLength(req *http.Request, info *common.RelayInfo) {
+	if req == nil || info == nil || info.UpstreamRequestBodySize <= 0 {
+		return
+	}
+	req.ContentLength = info.UpstreamRequestBodySize
+	req.Header.Set("Content-Length", fmt.Sprintf("%d", info.UpstreamRequestBodySize))
+}
+
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
@@ -313,6 +321,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	applyOutboundContentLength(req, info)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		cancel()
@@ -350,6 +359,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	applyOutboundContentLength(req, info)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		cancel()
