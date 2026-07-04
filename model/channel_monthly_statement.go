@@ -131,7 +131,7 @@ func GenerateChannelMonthlyStatement(billMonth string, force bool) (*ChannelMont
 			items, summary = buildChannelMonthlyStatementItems(statement.Id, normalizedBillMonth, ledgers, now)
 		}
 		if len(items) > 0 {
-			if err := tx.Create(&items).Error; err != nil {
+			if err := tx.CreateInBatches(&items, statementItemCreateBatchSize).Error; err != nil {
 				return err
 			}
 		}

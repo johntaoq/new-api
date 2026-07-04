@@ -28,6 +28,8 @@ const (
 	CustomerMonthlyStatementSourceTableFundings       = "user_quota_fundings"
 	CustomerMonthlyStatementSourceTableChannelLedgers = "channel_cost_ledgers"
 	CustomerMonthlyStatementSourceTableBalanceLedgers = "user_balance_ledgers"
+
+	statementItemCreateBatchSize = 500
 )
 
 type CustomerMonthlyStatement struct {
@@ -268,7 +270,7 @@ func GenerateCustomerMonthlyStatement(userId int, billMonth string, force bool) 
 			now,
 		)
 		if len(items) > 0 {
-			if err := tx.Create(&items).Error; err != nil {
+			if err := tx.CreateInBatches(&items, statementItemCreateBatchSize).Error; err != nil {
 				return err
 			}
 		}
