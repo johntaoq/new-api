@@ -36,6 +36,7 @@ import {
   renderAudioModelPrice,
   renderClaudeModelPrice,
   renderModelPrice,
+  renderTieredModelPrice,
 } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
@@ -66,6 +67,14 @@ export const useLogsData = () => {
 
     return parts.join('，');
   };
+
+  const buildTieredBillingRenderOptions = (log, other, displayMode) => ({
+    ...other,
+    prompt_tokens: log?.prompt_tokens || 0,
+    completion_tokens: log?.completion_tokens || 0,
+    quota: log?.quota,
+    displayMode,
+  });
 
   // Define column keys for selection
   const COLUMN_KEYS = {
@@ -452,39 +461,55 @@ export const useLogsData = () => {
           key: t('日志详情'),
           value: aiStudioImageLog
             ? renderAiStudioImageBilling(logs[i], other)
+            : other?.billing_mode === 'tiered_expr'
+            ? renderTieredModelPrice(
+                buildTieredBillingRenderOptions(
+                  logs[i],
+                  other,
+                  billingDisplayMode,
+                ),
+              )
             : other?.claude
             ? renderClaudeLogContent(
-                other?.model_ratio,
-                other.completion_ratio,
-                other.model_price,
-                other.group_ratio,
-                other?.user_group_ratio,
-                other.cache_ratio || 1.0,
-                other.cache_creation_ratio || 1.0,
-                other.cache_creation_tokens_5m || 0,
-                other.cache_creation_ratio_5m ||
-                  other.cache_creation_ratio ||
-                  1.0,
-                other.cache_creation_tokens_1h || 0,
-                other.cache_creation_ratio_1h ||
-                  other.cache_creation_ratio ||
-                  1.0,
-                billingDisplayMode,
+                {
+                  model_ratio: other?.model_ratio,
+                  completion_ratio: other?.completion_ratio,
+                  model_price: other?.model_price,
+                  group_ratio: other?.group_ratio,
+                  user_group_ratio: other?.user_group_ratio,
+                  cache_ratio: other?.cache_ratio || 1.0,
+                  cache_creation_ratio: other?.cache_creation_ratio || 1.0,
+                  cache_creation_tokens_5m:
+                    other?.cache_creation_tokens_5m || 0,
+                  cache_creation_ratio_5m:
+                    other?.cache_creation_ratio_5m ||
+                    other?.cache_creation_ratio ||
+                    1.0,
+                  cache_creation_tokens_1h:
+                    other?.cache_creation_tokens_1h || 0,
+                  cache_creation_ratio_1h:
+                    other?.cache_creation_ratio_1h ||
+                    other?.cache_creation_ratio ||
+                    1.0,
+                  displayMode: billingDisplayMode,
+                },
               )
             : renderLogContent(
-                other?.model_ratio,
-                other.completion_ratio,
-                other.model_price,
-                other.group_ratio,
-                other?.user_group_ratio,
-                other.cache_ratio || 1.0,
-                false,
-                1.0,
-                other.web_search || false,
-                other.web_search_call_count || 0,
-                other.file_search || false,
-                other.file_search_call_count || 0,
-                billingDisplayMode,
+                {
+                  model_ratio: other?.model_ratio,
+                  completion_ratio: other?.completion_ratio,
+                  model_price: other?.model_price,
+                  group_ratio: other?.group_ratio,
+                  user_group_ratio: other?.user_group_ratio,
+                  cache_ratio: other?.cache_ratio || 1.0,
+                  image: false,
+                  image_ratio: 1.0,
+                  web_search: other?.web_search || false,
+                  web_search_call_count: other?.web_search_call_count || 0,
+                  file_search: other?.file_search || false,
+                  file_search_call_count: other?.file_search_call_count || 0,
+                  displayMode: billingDisplayMode,
+                },
               ),
         });
         if (logs[i]?.content) {
@@ -525,72 +550,92 @@ export const useLogsData = () => {
         if (!isViolationFeeLog) {
           if (isAiStudioImageLog(logs[i], other)) {
             content = renderAiStudioImageBilling(logs[i], other);
+          } else if (other?.billing_mode === 'tiered_expr') {
+            content = renderTieredModelPrice(
+              buildTieredBillingRenderOptions(
+                logs[i],
+                other,
+                billingDisplayMode,
+              ),
+            );
           } else if (other?.ws || other?.audio) {
             content = renderAudioModelPrice(
-              other?.text_input,
-              other?.text_output,
-              other?.model_ratio,
-              other?.model_price,
-              other?.completion_ratio,
-              other?.audio_input,
-              other?.audio_output,
-              other?.audio_ratio,
-              other?.audio_completion_ratio,
-              other?.group_ratio,
-              other?.user_group_ratio,
-              other?.cache_tokens || 0,
-              other?.cache_ratio || 1.0,
-              billingDisplayMode,
+              {
+                prompt_tokens: other?.text_input,
+                completion_tokens: other?.text_output,
+                model_ratio: other?.model_ratio,
+                model_price: other?.model_price,
+                completion_ratio: other?.completion_ratio,
+                audio_input: other?.audio_input,
+                audio_output: other?.audio_output,
+                audio_ratio: other?.audio_ratio,
+                audio_completion_ratio: other?.audio_completion_ratio,
+                group_ratio: other?.group_ratio,
+                user_group_ratio: other?.user_group_ratio,
+                cache_tokens: other?.cache_tokens || 0,
+                cache_ratio: other?.cache_ratio || 1.0,
+                displayMode: billingDisplayMode,
+              },
             );
           } else if (other?.claude) {
             content = renderClaudeModelPrice(
-              logs[i].prompt_tokens,
-              logs[i].completion_tokens,
-              other.model_ratio,
-              other.model_price,
-              other.completion_ratio,
-              other.group_ratio,
-              other?.user_group_ratio,
-              other.cache_tokens || 0,
-              other.cache_ratio || 1.0,
-              other.cache_creation_tokens || 0,
-              other.cache_creation_ratio || 1.0,
-              other.cache_creation_tokens_5m || 0,
-              other.cache_creation_ratio_5m ||
-                other.cache_creation_ratio ||
-                1.0,
-              other.cache_creation_tokens_1h || 0,
-              other.cache_creation_ratio_1h ||
-                other.cache_creation_ratio ||
-                1.0,
-              billingDisplayMode,
+              {
+                prompt_tokens: logs[i].prompt_tokens,
+                completion_tokens: logs[i].completion_tokens,
+                model_ratio: other?.model_ratio,
+                model_price: other?.model_price,
+                completion_ratio: other?.completion_ratio,
+                group_ratio: other?.group_ratio,
+                user_group_ratio: other?.user_group_ratio,
+                cache_tokens: other?.cache_tokens || 0,
+                cache_ratio: other?.cache_ratio || 1.0,
+                cache_creation_tokens: other?.cache_creation_tokens || 0,
+                cache_creation_ratio: other?.cache_creation_ratio || 1.0,
+                cache_creation_tokens_5m:
+                  other?.cache_creation_tokens_5m || 0,
+                cache_creation_ratio_5m:
+                  other?.cache_creation_ratio_5m ||
+                  other?.cache_creation_ratio ||
+                  1.0,
+                cache_creation_tokens_1h:
+                  other?.cache_creation_tokens_1h || 0,
+                cache_creation_ratio_1h:
+                  other?.cache_creation_ratio_1h ||
+                  other?.cache_creation_ratio ||
+                  1.0,
+                displayMode: billingDisplayMode,
+              },
             );
           } else {
             content = renderModelPrice(
-              logs[i].prompt_tokens,
-              logs[i].completion_tokens,
-              other?.model_ratio,
-              other?.model_price,
-              other?.completion_ratio,
-              other?.group_ratio,
-              other?.user_group_ratio,
-              other?.cache_tokens || 0,
-              other?.cache_ratio || 1.0,
-              other?.image || false,
-              other?.image_ratio || 0,
-              other?.image_output || 0,
-              other?.web_search || false,
-              other?.web_search_call_count || 0,
-              other?.web_search_price || 0,
-              other?.file_search || false,
-              other?.file_search_call_count || 0,
-              other?.file_search_price || 0,
-              other?.audio_input_seperate_price || false,
-              other?.audio_input_token_count || 0,
-              other?.audio_input_price || 0,
-              other?.image_generation_call || false,
-              other?.image_generation_call_price || 0,
-              billingDisplayMode,
+              {
+                prompt_tokens: logs[i].prompt_tokens,
+                completion_tokens: logs[i].completion_tokens,
+                model_ratio: other?.model_ratio,
+                model_price: other?.model_price,
+                completion_ratio: other?.completion_ratio,
+                group_ratio: other?.group_ratio,
+                user_group_ratio: other?.user_group_ratio,
+                cache_tokens: other?.cache_tokens || 0,
+                cache_ratio: other?.cache_ratio || 1.0,
+                image: other?.image || false,
+                image_ratio: other?.image_ratio || 0,
+                image_output: other?.image_output || 0,
+                web_search: other?.web_search || false,
+                web_search_call_count: other?.web_search_call_count || 0,
+                web_search_price: other?.web_search_price || 0,
+                file_search: other?.file_search || false,
+                file_search_call_count: other?.file_search_call_count || 0,
+                file_search_price: other?.file_search_price || 0,
+                audio_input_seperate_price:
+                  other?.audio_input_seperate_price || false,
+                audio_input_token_count: other?.audio_input_token_count || 0,
+                audio_input_price: other?.audio_input_price || 0,
+                image_generation_call: other?.image_generation_call || false,
+                image_generation_call_price:
+                  other?.image_generation_call_price || 0,
+                displayMode: billingDisplayMode,
+              },
             );
           }
           expandDataLocal.push({

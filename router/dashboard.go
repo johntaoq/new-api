@@ -19,5 +19,7 @@ func SetDashboardRouter(router *gin.Engine) {
 		apiRouter.GET("/v1/dashboard/billing/subscription", controller.GetSubscription)
 		apiRouter.GET("/dashboard/billing/usage", controller.GetUsage)
 		apiRouter.GET("/v1/dashboard/billing/usage", controller.GetUsage)
+		apiRouter.GET("/dashboard/billing/credit_grants", controller.GetTokenStatus)
+		apiRouter.GET("/v1/dashboard/billing/credit_grants", controller.GetTokenStatus)
 	}
 }

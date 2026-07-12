@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -133,6 +135,12 @@ func WeChatBind(c *gin.Context) {
 			"success": false,
 		})
 		return
+	}
+	if c.Request.Method == http.MethodGet {
+		code := strings.TrimSpace(c.Query("code"))
+		if code != "" {
+			c.Request.Body = io.NopCloser(strings.NewReader(fmt.Sprintf(`{"code":%q}`, code)))
+		}
 	}
 	var req wechatBindRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {

@@ -2299,9 +2299,11 @@ export function renderTieredModelPrice(opts) {
   const {
     prompt_tokens: inputTokens = 0,
     completion_tokens: completionTokens = 0,
+    quota: finalQuota,
     expr_b64: exprB64,
     matched_tier: matchedTier,
     group_ratio: groupRatio,
+    user_group_ratio,
     cache_tokens: cacheTokens = 0,
     cache_creation_tokens: cacheCreationTokens = 0,
     cache_creation_tokens_5m: cacheCreationTokens5m = 0,
@@ -2325,7 +2327,11 @@ export function renderTieredModelPrice(opts) {
     return i18next.t('阶梯计费（未匹配到对应阶梯）');
   }
   const { symbol, rate } = getCurrencyConfig();
-  const gr = groupRatio || 1;
+  const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(
+      groupRatio,
+      user_group_ratio,
+  );
+  const gr = effectiveGroupRatio || 1;
 
   const hasAnyCacheTokens = cacheTokens > 0 || cacheCreationTokens > 0
       || cacheCreationTokens5m > 0 || cacheCreationTokens1h > 0;
@@ -2334,6 +2340,45 @@ export function renderTieredModelPrice(opts) {
       .filter((v) => v.group !== 'cache' || hasAnyCacheTokens)
       .map((v) => [v.field, v.label]);
 
+  const tieredTokenLines = [
+    {
+      label: i18next.t('输入'),
+      tokens: Math.max(
+          0,
+          Number(inputTokens || 0) -
+          (tier.cacheReadPrice > 0 ? Number(cacheTokens || 0) : 0) -
+          (tier.cacheCreatePrice > 0 ? Number(cacheCreationTokens || cacheCreationTokens5m || 0) : 0) -
+          (tier.cacheCreate1hPrice > 0 ? Number(cacheCreationTokens1h || 0) : 0),
+      ),
+      price: tier.inputPrice || 0,
+    },
+    {
+      label: i18next.t('输出'),
+      tokens: Number(completionTokens || 0),
+      price: tier.outputPrice || 0,
+    },
+    {
+      label: i18next.t('缓存读取'),
+      tokens: Number(cacheTokens || 0),
+      price: tier.cacheReadPrice || 0,
+    },
+    {
+      label: i18next.t('缓存创建'),
+      tokens: Number(cacheCreationTokens || cacheCreationTokens5m || 0),
+      price: tier.cacheCreatePrice || 0,
+    },
+    {
+      label: i18next.t('1h缓存创建'),
+      tokens: Number(cacheCreationTokens1h || 0),
+      price: tier.cacheCreate1hPrice || 0,
+    },
+  ].filter((item) => item.tokens > 0 && item.price > 0);
+
+  const tieredAmountBeforeGroup = tieredTokenLines.reduce(
+      (sum, item) => sum + (item.tokens / 1000000) * item.price,
+      0,
+  );
+
   const lines = [
     buildBillingText('命中档位：{{tier}}', { tier: matchedTier || tier.label }),
     ...priceLines
@@ -2341,6 +2386,30 @@ export function renderTieredModelPrice(opts) {
         .map(([field, label]) =>
             buildBillingPriceText(`${label}：{{symbol}}{{price}} / 1M tokens`, { symbol, usdAmount: tier[field], rate }),
         ),
+    ...tieredTokenLines.map((item) =>
+        buildBillingText(
+            '{{label}} {{tokens}} tokens / 1M * {{symbol}}{{price}} = {{amount}}',
+            {
+              label: item.label,
+              tokens: item.tokens,
+              symbol,
+              price: formatBillingDisplayPrice(item.price, rate),
+              amount: renderDisplayAmountFromUsd((item.tokens / 1000000) * item.price),
+            },
+        ),
+    ),
+    buildBillingText(
+        '小计 {{subtotal}} * {{ratioType}} {{ratio}} = {{total}}',
+        {
+          subtotal: renderDisplayAmountFromUsd(tieredAmountBeforeGroup),
+          ratioType: ratioLabel,
+          ratio: gr,
+          total: renderDisplayAmountFromUsd(tieredAmountBeforeGroup * gr),
+        },
+    ),
+    Number.isFinite(Number(finalQuota))
+      ? buildBillingText('实际扣费：{{quota}}', { quota: renderQuota(finalQuota, 6) })
+      : null,
   ];
 
   return renderBillingArticle(lines);

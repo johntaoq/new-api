@@ -8,6 +8,7 @@ func usageCacheTokenTotal(usage interface{}) int {
 		if typed == nil {
 			return 0
 		}
+		typed.NormalizeCacheWriteTokens()
 		return typed.PromptTokensDetails.CachedTokens +
 			typed.PromptTokensDetails.CachedCreationTokens +
 			typed.ClaudeCacheCreation5mTokens +
@@ -16,6 +17,7 @@ func usageCacheTokenTotal(usage interface{}) int {
 		if typed == nil {
 			return 0
 		}
+		typed.InputTokenDetails.NormalizeCacheWriteTokens()
 		return typed.InputTokenDetails.CachedTokens + typed.InputTokenDetails.CachedCreationTokens
 	default:
 		return 0

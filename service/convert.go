@@ -227,6 +227,7 @@ func buildClaudeUsageFromOpenAIUsage(oaiUsage *dto.Usage) *dto.ClaudeUsage {
 	if oaiUsage == nil {
 		return nil
 	}
+	oaiUsage.NormalizeCacheWriteTokens()
 	cacheCreation5m, cacheCreation1h := NormalizeCacheCreationSplit(
 		oaiUsage.PromptTokensDetails.CachedCreationTokens,
 		oaiUsage.ClaudeCacheCreation5mTokens,

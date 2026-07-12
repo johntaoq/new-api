@@ -258,9 +258,39 @@ type OpenAIVideoResponse struct {
 type InputTokenDetails struct {
 	CachedTokens         int `json:"cached_tokens"`
 	CachedCreationTokens int `json:"cached_creation_tokens,omitempty"`
+	CacheWriteTokens     int `json:"cache_write_tokens,omitempty"`
 	TextTokens           int `json:"text_tokens"`
 	AudioTokens          int `json:"audio_tokens"`
 	ImageTokens          int `json:"image_tokens"`
+}
+
+func (d *InputTokenDetails) NormalizeCacheWriteTokens() {
+	if d == nil {
+		return
+	}
+	if d.CachedCreationTokens == 0 && d.CacheWriteTokens > 0 {
+		d.CachedCreationTokens = d.CacheWriteTokens
+	}
+	if d.CacheWriteTokens == 0 && d.CachedCreationTokens > 0 {
+		d.CacheWriteTokens = d.CachedCreationTokens
+	}
+}
+
+func (u *Usage) NormalizeCacheWriteTokens() {
+	if u == nil {
+		return
+	}
+	u.PromptTokensDetails.NormalizeCacheWriteTokens()
+	if u.InputTokensDetails == nil {
+		return
+	}
+	u.InputTokensDetails.NormalizeCacheWriteTokens()
+	if u.PromptTokensDetails.CachedCreationTokens == 0 && u.InputTokensDetails.CachedCreationTokens > 0 {
+		u.PromptTokensDetails.CachedCreationTokens = u.InputTokensDetails.CachedCreationTokens
+	}
+	if u.PromptTokensDetails.CacheWriteTokens == 0 && u.InputTokensDetails.CacheWriteTokens > 0 {
+		u.PromptTokensDetails.CacheWriteTokens = u.InputTokensDetails.CacheWriteTokens
+	}
 }
 
 type OutputTokenDetails struct {

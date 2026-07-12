@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -279,6 +280,43 @@ func TestCalculateTextQuotaSummarySeparatesOpenRouterCacheCreationFromPromptBill
 	require.Equal(t, 3012, summary.Quota)
 }
 
+func TestCalculateTextQuotaSummaryUsesGPTCacheWriteTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	var usage dto.Usage
+	err := common.Unmarshal([]byte(`{
+		"prompt_tokens": 100000,
+		"prompt_tokens_details": {
+			"cached_tokens": 60000,
+			"cache_write_tokens": 30000
+		},
+		"completion_tokens": 1000,
+		"total_tokens": 101000
+	}`), &usage)
+	require.NoError(t, err)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5.6",
+		PriceData: types.PriceData{
+			ModelRatio:         1,
+			CompletionRatio:    6,
+			CacheRatio:         0.1,
+			CacheCreationRatio: 1.25,
+			GroupRatioInfo:     types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, &usage)
+
+	require.Equal(t, 60000, summary.CacheTokens)
+	require.Equal(t, 30000, summary.CacheCreationTokens)
+	require.Equal(t, 30000, usage.PromptTokensDetails.CachedCreationTokens)
+	require.Equal(t, 59500, summary.Quota)
+}
+
 func TestCalculateTextQuotaSummaryKeepsPrePRClaudeOpenRouterBilling(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -438,4 +476,41 @@ func TestComposeTieredTextQuotaErrorFallbackUsesPreConsumedQuota(t *testing.T) {
 
 	require.Equal(t, int64(12500), summary.ToolCallSurchargeQuota.Round(0).IntPart())
 	require.Equal(t, 14500, quota)
+}
+
+func TestCalculateTextQuotaUsesTieredBillingSnapshot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	expr := `tier("standard", p * 2 + c * 10)`
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5.4",
+		PriceData: types.PriceData{
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 0.1},
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:               "tiered_expr",
+			ExprString:                expr,
+			ExprHash:                  billingexpr.ExprHashString(expr),
+			GroupRatio:                0.1,
+			EstimatedQuotaBeforeGroup: 1,
+			EstimatedQuotaAfterGroup:  1,
+			EstimatedTier:             "standard",
+			QuotaPerUnit:              common.QuotaPerUnit,
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     1000,
+		CompletionTokens: 100,
+		TotalTokens:      1100,
+	}
+
+	got := CalculateTextQuota(ctx, relayInfo, usage)
+	want := billingexpr.QuotaRound(((1000 * 2) + (100 * 10)) / 1_000_000.0 * common.QuotaPerUnit * 0.1)
+
+	require.Equal(t, want, got)
+	require.NotZero(t, got)
 }

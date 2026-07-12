@@ -51,6 +51,62 @@ func acquireImageRelaySlot() (func(), bool) {
 	}
 }
 
+func normalizedImageRequestN(request *dto.ImageRequest) uint {
+	if request == nil || request.N == nil || *request.N == 0 {
+		return 1
+	}
+	return *request.N
+}
+
+func applyImageUsageFallback(usage *dto.Usage, request *dto.ImageRequest) {
+	if usage == nil {
+		return
+	}
+
+	if usage.PromptTokens <= 0 {
+		if usage.InputTokens > 0 {
+			usage.PromptTokens = usage.InputTokens
+		} else if usage.NumInputTextTokens > 0 || usage.NumInputImageTokens > 0 {
+			usage.PromptTokens = usage.NumInputTextTokens + usage.NumInputImageTokens
+		} else {
+			usage.PromptTokens = 1
+		}
+	}
+
+	if usage.CompletionTokens <= 0 {
+		if usage.OutputTokens > 0 {
+			usage.CompletionTokens = usage.OutputTokens
+		} else if usage.NumOutputTokens > 0 {
+			usage.CompletionTokens = usage.NumOutputTokens
+		} else if usage.TotalTokens > usage.PromptTokens {
+			usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
+		} else if request != nil {
+			meta := request.GetTokenCountMeta()
+			if meta != nil && meta.MaxTokens > 0 {
+				usage.CompletionTokens = meta.MaxTokens * int(normalizedImageRequestN(request))
+			}
+		}
+	}
+
+	if usage.InputTokens <= 0 {
+		usage.InputTokens = usage.PromptTokens
+	}
+	if usage.OutputTokens <= 0 {
+		usage.OutputTokens = usage.CompletionTokens
+	}
+	if usage.NumOutputTokens <= 0 {
+		usage.NumOutputTokens = usage.CompletionTokens
+	}
+	if usage.CompletionTokenDetails.ImageTokens <= 0 {
+		usage.CompletionTokenDetails.ImageTokens = usage.CompletionTokens
+	}
+
+	totalTokens := usage.PromptTokens + usage.CompletionTokens
+	if usage.TotalTokens <= 0 || usage.TotalTokens < totalTokens {
+		usage.TotalTokens = totalTokens
+	}
+}
+
 func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
 
@@ -158,10 +214,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		return newAPIError
 	}
 
-	imageN := uint(1)
-	if request.N != nil {
-		imageN = *request.N
-	}
+	imageN := normalizedImageRequestN(request)
 
 	// n is handled via OtherRatio so it is applied exactly once in quota
 	// calculation (both price-based and ratio-based paths).
@@ -173,12 +226,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		}
 	}
 
-	if usage.(*dto.Usage).TotalTokens == 0 {
-		usage.(*dto.Usage).TotalTokens = 1
-	}
-	if usage.(*dto.Usage).PromptTokens == 0 {
-		usage.(*dto.Usage).PromptTokens = 1
-	}
+	applyImageUsageFallback(usage.(*dto.Usage), request)
 
 	quality := request.Quality
 	if quality == "" {

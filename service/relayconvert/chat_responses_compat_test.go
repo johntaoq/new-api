@@ -86,6 +86,39 @@ func TestResponsesResponseToChatCompletionsPreservesTextAndToolCalls(t *testing.
 	assert.Equal(t, 7, usage.TotalTokens)
 }
 
+func TestResponsesUsageToChatUsagePreservesCacheWriteTokens(t *testing.T) {
+	resp := &dto.OpenAIResponsesResponse{
+		ID:     "resp_cache",
+		Model:  "gpt-5.6",
+		Status: []byte(`"completed"`),
+		Output: []dto.ResponsesOutput{
+			{
+				Type: responsesOutputTypeMessage,
+				Role: "assistant",
+				Content: []dto.ResponsesOutputContent{
+					{Type: "output_text", Text: "ok"},
+				},
+			},
+		},
+		Usage: &dto.Usage{
+			InputTokens:  100000,
+			OutputTokens: 1000,
+			TotalTokens:  101000,
+			InputTokensDetails: &dto.InputTokenDetails{
+				CachedTokens:     60000,
+				CacheWriteTokens: 30000,
+			},
+		},
+	}
+
+	_, usage, err := ResponsesResponseToChatCompletionsResponse(resp, "chatcmpl_cache")
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	assert.Equal(t, 60000, usage.PromptTokensDetails.CachedTokens)
+	assert.Equal(t, 30000, usage.PromptTokensDetails.CacheWriteTokens)
+	assert.Equal(t, 30000, usage.PromptTokensDetails.CachedCreationTokens)
+}
+
 func TestResponsesResponseToChatCompletionsPreservesReasoningSummary(t *testing.T) {
 	resp := &dto.OpenAIResponsesResponse{
 		ID:     "resp_1",

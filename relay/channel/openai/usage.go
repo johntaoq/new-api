@@ -5,12 +5,18 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 )
 
 func applyUsagePostProcessing(info *relaycommon.RelayInfo, usage *dto.Usage, responseBody []byte) {
 	if info == nil || usage == nil {
 		return
 	}
+
+	if info.RelayMode == relayconstant.RelayModeImagesGenerations || info.RelayMode == relayconstant.RelayModeImagesEdits {
+		applyOpenAIImageTopLevelUsage(usage, responseBody)
+	}
+	usage.NormalizeCacheWriteTokens()
 
 	switch info.ChannelType {
 	case constant.ChannelTypeDeepSeek:
@@ -48,6 +54,95 @@ func applyUsagePostProcessing(info *relaycommon.RelayInfo, usage *dto.Usage, res
 			}
 		}
 	}
+}
+
+func applyOpenAIImageTopLevelUsage(usage *dto.Usage, body []byte) {
+	if usage == nil || len(body) == 0 {
+		return
+	}
+
+	var payload struct {
+		InputTokens         *int `json:"input_tokens"`
+		OutputTokens        *int `json:"output_tokens"`
+		NumInputTextTokens  *int `json:"num_input_text_tokens"`
+		NumInputImageTokens *int `json:"num_input_image_tokens"`
+		NumOutputTokens     *int `json:"num_output_tokens"`
+	}
+	if err := common.Unmarshal(body, &payload); err != nil {
+		return
+	}
+
+	if usage.InputTokens == 0 {
+		if inputTokens := firstPositiveInt(payload.InputTokens); inputTokens > 0 {
+			usage.InputTokens = inputTokens
+		}
+	}
+	if usage.NumInputTextTokens == 0 {
+		if textTokens := firstPositiveInt(payload.NumInputTextTokens); textTokens > 0 {
+			usage.NumInputTextTokens = textTokens
+		}
+	}
+	if usage.NumInputImageTokens == 0 {
+		if imageTokens := firstPositiveInt(payload.NumInputImageTokens); imageTokens > 0 {
+			usage.NumInputImageTokens = imageTokens
+		}
+	}
+	if usage.PromptTokens == 0 {
+		if usage.InputTokens > 0 {
+			usage.PromptTokens = usage.InputTokens
+		} else if usage.NumInputTextTokens > 0 || usage.NumInputImageTokens > 0 {
+			usage.PromptTokens = usage.NumInputTextTokens + usage.NumInputImageTokens
+		}
+	}
+	if usage.PromptTokensDetails.TextTokens == 0 && usage.NumInputTextTokens > 0 {
+		usage.PromptTokensDetails.TextTokens = usage.NumInputTextTokens
+	}
+	if usage.PromptTokensDetails.ImageTokens == 0 && usage.NumInputImageTokens > 0 {
+		usage.PromptTokensDetails.ImageTokens = usage.NumInputImageTokens
+	}
+
+	outputTokens := firstPositiveInt(payload.OutputTokens, payload.NumOutputTokens)
+	if outputTokens > 0 {
+		if usage.OutputTokens == 0 {
+			usage.OutputTokens = outputTokens
+		}
+		if usage.NumOutputTokens == 0 {
+			usage.NumOutputTokens = outputTokens
+		}
+		if usage.CompletionTokens == 0 {
+			usage.CompletionTokens = outputTokens
+		}
+		if usage.CompletionTokenDetails.ImageTokens == 0 {
+			usage.CompletionTokenDetails.ImageTokens = outputTokens
+		}
+	}
+
+	totalTokens := usage.PromptTokens + usage.CompletionTokens
+	if totalTokens > 0 && (usage.TotalTokens == 0 || usage.TotalTokens < totalTokens) {
+		usage.TotalTokens = totalTokens
+	}
+}
+
+func firstPositiveInt(values ...*int) int {
+	for _, value := range values {
+		if value != nil && *value > 0 {
+			return *value
+		}
+	}
+	return 0
+}
+
+func copyInputTokenDetailsToPromptDetails(usage *dto.Usage, details *dto.InputTokenDetails) {
+	if usage == nil || details == nil {
+		return
+	}
+	details.NormalizeCacheWriteTokens()
+	usage.PromptTokensDetails.CachedTokens = details.CachedTokens
+	usage.PromptTokensDetails.CachedCreationTokens = details.CachedCreationTokens
+	usage.PromptTokensDetails.CacheWriteTokens = details.CacheWriteTokens
+	usage.PromptTokensDetails.ImageTokens = details.ImageTokens
+	usage.PromptTokensDetails.TextTokens = details.TextTokens
+	usage.PromptTokensDetails.AudioTokens = details.AudioTokens
 }
 
 func extractCachedTokensFromBody(body []byte) (int, bool) {

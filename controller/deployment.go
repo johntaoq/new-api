@@ -491,6 +491,61 @@ func DeleteDeployment(c *gin.Context) {
 	common.ApiSuccess(c, data)
 }
 
+type BatchDeleteDeploymentsRequest struct {
+	Ids []string `json:"ids"`
+}
+
+func BatchDeleteDeployments(c *gin.Context) {
+	client, ok := getIoEnterpriseClient(c)
+	if !ok {
+		return
+	}
+
+	var req BatchDeleteDeploymentsRequest
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Ids) == 0 {
+		common.ApiErrorMsg(c, "deployment ids are required")
+		return
+	}
+
+	deleted := make([]string, 0, len(req.Ids))
+	failed := make(map[string]string)
+	for _, rawID := range req.Ids {
+		deploymentID := strings.TrimSpace(rawID)
+		if deploymentID == "" {
+			continue
+		}
+		if _, err := client.DeleteDeployment(deploymentID); err != nil {
+			failed[deploymentID] = err.Error()
+			continue
+		}
+		deleted = append(deleted, deploymentID)
+	}
+
+	data := gin.H{
+		"deleted": deleted,
+		"failed":  failed,
+	}
+	if len(failed) > 0 {
+		common.ApiErrorMsg(c, fmt.Sprintf("failed to delete %d deployment(s)", len(failed)))
+		return
+	}
+	common.ApiSuccess(c, data)
+}
+
+func StartDeployment(c *gin.Context) {
+	if _, ok := requireDeploymentID(c); !ok {
+		return
+	}
+	common.ApiErrorMsg(c, "deployment start is not supported by the current io.net API")
+}
+
+func RestartDeployment(c *gin.Context) {
+	if _, ok := requireDeploymentID(c); !ok {
+		return
+	}
+	common.ApiErrorMsg(c, "deployment restart is not supported by the current io.net API")
+}
+
 func CreateDeployment(c *gin.Context) {
 	client, ok := getIoEnterpriseClient(c)
 	if !ok {

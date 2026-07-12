@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -28,8 +29,29 @@ func newImageTestContext(t *testing.T, body, contentType string, isStream bool) 
 	info := &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{},
 		IsStream:    isStream,
+		RelayMode:   relayconstant.RelayModeImagesGenerations,
 	}
 	return c, recorder, resp, info
+}
+
+func TestOpenaiImageHandlerMapsTopLevelNumOutputTokens(t *testing.T) {
+	oldMode := gin.Mode()
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(func() { gin.SetMode(oldMode) })
+
+	body := `{"created":1783303721,"model":"mai-image","size":"1024x1024","num_output_tokens":1024,"data":[{"b64_json":"final","revised_prompt":"draw a square"}]}`
+
+	c, recorder, resp, info := newImageTestContext(t, body, "application/json", false)
+
+	usage, err := OpenaiImageHandler(c, info, resp)
+	require.Nil(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, 1024, usage.CompletionTokens)
+	require.Equal(t, 1024, usage.OutputTokens)
+	require.Equal(t, 1024, usage.NumOutputTokens)
+	require.Equal(t, 1024, usage.CompletionTokenDetails.ImageTokens)
+	require.Equal(t, 1024, usage.TotalTokens)
+	require.JSONEq(t, body, recorder.Body.String())
 }
 
 // TestOpenaiImageStreamHandlerForwardsSSEAndUsage covers the core SSE path:
