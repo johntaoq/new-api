@@ -25,10 +25,9 @@ import SkeletonWrapper from '../components/SkeletonWrapper';
 const HeaderLogo = ({
   isMobile,
   isConsoleRoute,
-  logo,
-  logoLoaded,
   isLoading,
   systemName,
+  isHomeRoute,
   isSelfUseMode,
   isDemoSiteMode,
   t,
@@ -37,27 +36,36 @@ const HeaderLogo = ({
     return null;
   }
 
+  const displayLogo = '/unikeyx-logo-header.png';
+  const logoBoxClassName = isHomeRoute
+    ? 'ukx-home-logo-box relative h-9 w-[68px] md:h-10 md:w-[75.56px] shrink-0 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-white/20'
+    : 'relative h-9 w-[68px] md:h-10 md:w-[75.56px] shrink-0 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5 dark:ring-white/10';
+  const logoImageClassName =
+    'absolute inset-0 h-full w-full object-contain opacity-100 transition-transform duration-200 group-hover:scale-[1.02]';
+  const showLogoSkeleton = false;
+  const showTitleSkeleton = !isHomeRoute && isLoading;
+
   return (
     <Link to='/' className='group flex items-center gap-2'>
-      <div className='relative w-8 h-8 md:w-8 md:h-8'>
-        <SkeletonWrapper loading={isLoading || !logoLoaded} type='image' />
+      <div className={logoBoxClassName}>
+        <SkeletonWrapper loading={showLogoSkeleton} type='image' />
         <img
-          src={logo}
+          src={displayLogo}
           alt='logo'
-          className={`absolute inset-0 w-full h-full transition-all duration-200 group-hover:scale-110 rounded-full ${!isLoading && logoLoaded ? 'opacity-100' : 'opacity-0'}`}
+          className={logoImageClassName}
         />
       </div>
       <div className='hidden md:flex items-center gap-2'>
         <div className='flex items-center gap-2'>
           <SkeletonWrapper
-            loading={isLoading}
+            loading={showTitleSkeleton}
             type='title'
             width={120}
             height={24}
           >
             <Typography.Title
               heading={4}
-              className='!text-lg !font-semibold !mb-0'
+              className={`!text-lg !font-semibold !mb-0 ${isHomeRoute ? 'ukx-home-logo-text !text-white' : ''}`}
             >
               {systemName}
             </Typography.Title>

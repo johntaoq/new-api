@@ -256,6 +256,10 @@ func GetFinanceCustomerBillDetailsV2(billMonth string, userID int) ([]FinanceCus
 	if err != nil {
 		return nil, err
 	}
+	return buildFinanceCustomerBillDetails(statement)
+}
+
+func buildFinanceCustomerBillDetails(statement *CustomerMonthlyStatement) ([]FinanceCustomerBillDetailItem, error) {
 	statementItems, err := GetAllCustomerMonthlyStatementItems(statement.Id, 0)
 	if err != nil {
 		return nil, err
@@ -284,14 +288,59 @@ func GetFinanceCustomerBillDetailsV2(billMonth string, userID int) ([]FinanceCus
 	return items, nil
 }
 
-func ExportFinanceCustomerBillCSVV2(billMonth string, userID int) ([]byte, string, error) {
+func ListFinanceCustomerBillDetailsV2(billMonth string, userID int, pageInfo *common.PageInfo) (*common.PageInfo, error) {
 	items, err := GetFinanceCustomerBillDetailsV2(billMonth, userID)
+	if err != nil {
+		return nil, err
+	}
+	pageInfo.SetTotal(len(items))
+	pageInfo.SetItems(financePageItems(items, pageInfo))
+	return pageInfo, nil
+}
+
+func ExportFinanceCustomerBillCSVV2(billMonth string, userID int) ([]byte, string, error) {
+	statement, err := GenerateCustomerMonthlyStatement(userID, billMonth, false)
+	if err != nil {
+		return nil, "", err
+	}
+	items, err := buildFinanceCustomerBillDetails(statement)
 	if err != nil {
 		return nil, "", err
 	}
 	buffer := &bytes.Buffer{}
 	buffer.Write([]byte{0xEF, 0xBB, 0xBF})
 	writer := csv.NewWriter(buffer)
+	summaryHeader := []string{
+		"客户名字",
+		"账单时间周期",
+		"本期消费",
+		"赠送",
+		"调整",
+		"充值",
+		"其他项目汇总",
+	}
+	if err := writer.Write(summaryHeader); err != nil {
+		return nil, "", err
+	}
+	summaryRecord := []string{
+		firstNonEmpty(statement.UsernameSnapshot, fmt.Sprintf("user-%d", userID)),
+		fmt.Sprintf(
+			"%s 至 %s",
+			time.Unix(statement.PeriodStart, 0).In(time.Local).Format("2006-01-02"),
+			time.Unix(statement.PeriodEnd, 0).In(time.Local).Format("2006-01-02"),
+		),
+		formatFinanceBillSummaryAmount(statement.TotalConsumeUSD),
+		formatFinanceBillSummaryAmount(statement.TotalGiftUSD),
+		formatFinanceBillSummaryAmount(statement.TotalAdjustmentUSD),
+		formatFinanceBillSummaryAmount(statement.TotalTopupUSD),
+		formatFinanceBillSummaryAmount(statement.TotalRefundUSD),
+	}
+	if err := writer.Write(summaryRecord); err != nil {
+		return nil, "", err
+	}
+	if err := writer.Write([]string{}); err != nil {
+		return nil, "", err
+	}
 	header := []string{"时间", "令牌", "消费类型", "模型", "COS币变动", "等价USD", "渠道", "请求ID", "说明"}
 	if err := writer.Write(header); err != nil {
 		return nil, "", err
@@ -317,6 +366,10 @@ func ExportFinanceCustomerBillCSVV2(billMonth string, userID int) ([]byte, strin
 		return nil, "", err
 	}
 	return buffer.Bytes(), fmt.Sprintf("customer-bill-%d-%s.csv", userID, billMonth), nil
+}
+
+func formatFinanceBillSummaryAmount(usdAmount float64) string {
+	return fmt.Sprintf("%.6f COS / $%.6f", financeCOSAmountFromUSD(usdAmount), usdAmount)
 }
 
 func absInt(value int) int {

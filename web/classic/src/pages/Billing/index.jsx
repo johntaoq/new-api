@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import {
   Button,
@@ -386,7 +386,9 @@ const Billing = () => {
   const [giftAuditPage, setGiftAuditPage] = useState(createPageState());
 
   const [channelMetric, setChannelMetric] = useState('usd');
-  const [channelLoading, setChannelLoading] = useState(false);
+  const [channelSummaryLoading, setChannelSummaryLoading] = useState(false);
+  const [channelListLoading, setChannelListLoading] = useState(false);
+  const [modelListLoading, setModelListLoading] = useState(false);
   const [channelSummary, setChannelSummary] = useState(null);
   const [channelPage, setChannelPage] = useState(createPageState());
   const [modelPage, setModelPage] = useState(createPageState());
@@ -405,9 +407,17 @@ const Billing = () => {
   const [customerSummaryPage, setCustomerSummaryPage] = useState(
     createPageState(),
   );
-  const [customerBillDetails, setCustomerBillDetails] = useState([]);
+  const [customerDetailsPage, setCustomerDetailsPage] = useState(
+    createPageState(),
+  );
   const [selectedBillUserId, setSelectedBillUserId] = useState(null);
   const [selectedBillUserName, setSelectedBillUserName] = useState('');
+
+  const channelSummaryRequestRef = useRef(0);
+  const channelListRequestRef = useRef(0);
+  const modelListRequestRef = useRef(0);
+  const customerSummaryRequestRef = useRef(0);
+  const customerDetailsRequestRef = useRef(0);
 
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditModuleInput, setAuditModuleInput] = useState('');
@@ -465,7 +475,13 @@ const Billing = () => {
 
   useEffect(() => {
     if (activeTab === 'channel') {
-      loadChannelData();
+      loadChannelSummary();
+    }
+  }, [activeTab, periodType, periodValue]);
+
+  useEffect(() => {
+    if (activeTab === 'channel') {
+      loadChannelList();
     }
   }, [
     activeTab,
@@ -473,18 +489,19 @@ const Billing = () => {
     periodValue,
     channelPage.page,
     channelPage.pageSize,
-    modelPage.page,
-    modelPage.pageSize,
   ]);
 
   useEffect(() => {
-    setPaidSourcesPage((prev) => ({ ...prev, page: 1 }));
-    setGiftAuditSummaryPage((prev) => ({ ...prev, page: 1 }));
-    setGiftAuditPage((prev) => ({ ...prev, page: 1 }));
-    setChannelPage((prev) => ({ ...prev, page: 1 }));
-    setModelPage((prev) => ({ ...prev, page: 1 }));
-    setAuditPage((prev) => ({ ...prev, page: 1 }));
-  }, [periodType, periodValue]);
+    if (activeTab === 'channel') {
+      loadModelList();
+    }
+  }, [
+    activeTab,
+    periodType,
+    periodValue,
+    modelPage.page,
+    modelPage.pageSize,
+  ]);
 
   useEffect(() => {
     if (activeTab === 'customer') {
@@ -503,7 +520,14 @@ const Billing = () => {
     if (activeTab === 'customer' && selectedBillUserId) {
       loadCustomerDetails(selectedBillUserId);
     }
-  }, [activeTab, selectedBillUserId, billQuery.billMonth, customerRefreshVersion]);
+  }, [
+    activeTab,
+    selectedBillUserId,
+    billQuery.billMonth,
+    customerDetailsPage.page,
+    customerDetailsPage.pageSize,
+    customerRefreshVersion,
+  ]);
 
   useEffect(() => {
     if (activeTab === 'audit') {
@@ -585,37 +609,79 @@ const Billing = () => {
     }
   };
 
-  const loadChannelData = async () => {
-    setChannelLoading(true);
+  const loadChannelSummary = async () => {
+    const requestId = ++channelSummaryRequestRef.current;
+    setChannelSummaryLoading(true);
     try {
-      const [summary, channels, models] = await Promise.all([
-        API.get('/api/finance/channel-cost/summary', { params: periodParams }),
-        API.get('/api/finance/channel-cost/channels', {
-          params: {
-            ...periodParams,
-            p: channelPage.page,
-            page_size: channelPage.pageSize,
-          },
-        }),
-        API.get('/api/finance/channel-cost/models', {
-          params: {
-            ...periodParams,
-            p: modelPage.page,
-            page_size: modelPage.pageSize,
-          },
-        }),
-      ]);
-      setChannelSummary(unwrapResponse(summary));
-      setChannelPage((prev) => ({ ...prev, ...unwrapResponse(channels) }));
-      setModelPage((prev) => ({ ...prev, ...unwrapResponse(models) }));
+      const response = await API.get('/api/finance/channel-cost/summary', {
+        params: periodParams,
+      });
+      if (requestId === channelSummaryRequestRef.current) {
+        setChannelSummary(unwrapResponse(response));
+      }
     } catch (error) {
-      showError(error.message);
+      if (requestId === channelSummaryRequestRef.current) {
+        showError(error.message);
+      }
     } finally {
-      setChannelLoading(false);
+      if (requestId === channelSummaryRequestRef.current) {
+        setChannelSummaryLoading(false);
+      }
+    }
+  };
+
+  const loadChannelList = async () => {
+    const requestId = ++channelListRequestRef.current;
+    setChannelListLoading(true);
+    try {
+      const response = await API.get('/api/finance/channel-cost/channels', {
+        params: {
+          ...periodParams,
+          p: channelPage.page,
+          page_size: channelPage.pageSize,
+        },
+      });
+      if (requestId === channelListRequestRef.current) {
+        setChannelPage((prev) => ({ ...prev, ...unwrapResponse(response) }));
+      }
+    } catch (error) {
+      if (requestId === channelListRequestRef.current) {
+        showError(error.message);
+      }
+    } finally {
+      if (requestId === channelListRequestRef.current) {
+        setChannelListLoading(false);
+      }
+    }
+  };
+
+  const loadModelList = async () => {
+    const requestId = ++modelListRequestRef.current;
+    setModelListLoading(true);
+    try {
+      const response = await API.get('/api/finance/channel-cost/models', {
+        params: {
+          ...periodParams,
+          p: modelPage.page,
+          page_size: modelPage.pageSize,
+        },
+      });
+      if (requestId === modelListRequestRef.current) {
+        setModelPage((prev) => ({ ...prev, ...unwrapResponse(response) }));
+      }
+    } catch (error) {
+      if (requestId === modelListRequestRef.current) {
+        showError(error.message);
+      }
+    } finally {
+      if (requestId === modelListRequestRef.current) {
+        setModelListLoading(false);
+      }
     }
   };
 
   const loadCustomerSummary = async () => {
+    const requestId = ++customerSummaryRequestRef.current;
     setCustomerLoading(true);
     try {
       const response = await API.get('/api/finance/customer-bills/summary', {
@@ -628,40 +694,73 @@ const Billing = () => {
       });
       const pageData = unwrapResponse(response);
       const nextItems = pageData?.items || [];
-      setCustomerSummaryPage((prev) => ({ ...prev, ...pageData }));
-      if (nextItems.length === 0) {
-        setSelectedBillUserId(null);
-        setSelectedBillUserName('');
-        setCustomerBillDetails([]);
+      if (requestId !== customerSummaryRequestRef.current) {
         return;
       }
-      const matchedItem =
-        nextItems.find((item) => item.user_id === selectedBillUserId) ||
-        nextItems[0];
-      setSelectedBillUserId(matchedItem.user_id);
-      setSelectedBillUserName(matchedItem.username || '');
+      setCustomerSummaryPage((prev) => ({ ...prev, ...pageData }));
+      if (nextItems.length === 0) {
+        customerDetailsRequestRef.current += 1;
+        setSelectedBillUserId(null);
+        setSelectedBillUserName('');
+        setCustomerDetailsPage((prev) => ({
+          ...prev,
+          page: 1,
+          total: 0,
+          items: [],
+        }));
+        return;
+      }
+      if (
+        selectedBillUserId &&
+        !nextItems.some((item) => item.user_id === selectedBillUserId)
+      ) {
+        customerDetailsRequestRef.current += 1;
+        setSelectedBillUserId(null);
+        setSelectedBillUserName('');
+        setCustomerDetailsPage((prev) => ({
+          ...prev,
+          page: 1,
+          total: 0,
+          items: [],
+        }));
+      }
     } catch (error) {
-      showError(error.message);
+      if (requestId === customerSummaryRequestRef.current) {
+        showError(error.message);
+      }
     } finally {
-      setCustomerLoading(false);
+      if (requestId === customerSummaryRequestRef.current) {
+        setCustomerLoading(false);
+      }
     }
   };
 
   const loadCustomerDetails = async (userId) => {
+    const requestId = ++customerDetailsRequestRef.current;
     setCustomerDetailLoading(true);
     try {
       const response = await API.get('/api/finance/customer-bills/details', {
         params: {
           bill_month: billQuery.billMonth,
           user_id: userId,
+          p: customerDetailsPage.page,
+          page_size: customerDetailsPage.pageSize,
         },
       });
-      const data = unwrapResponse(response);
-      setCustomerBillDetails(data?.items || []);
+      if (requestId === customerDetailsRequestRef.current) {
+        setCustomerDetailsPage((prev) => ({
+          ...prev,
+          ...unwrapResponse(response),
+        }));
+      }
     } catch (error) {
-      showError(error.message);
+      if (requestId === customerDetailsRequestRef.current) {
+        showError(error.message);
+      }
     } finally {
-      setCustomerDetailLoading(false);
+      if (requestId === customerDetailsRequestRef.current) {
+        setCustomerDetailLoading(false);
+      }
     }
   };
 
@@ -678,6 +777,15 @@ const Billing = () => {
           user_keyword: nextQuery.userKeyword,
         },
       });
+      customerDetailsRequestRef.current += 1;
+      setSelectedBillUserId(null);
+      setSelectedBillUserName('');
+      setCustomerDetailsPage((prev) => ({
+        ...prev,
+        page: 1,
+        total: 0,
+        items: [],
+      }));
       setCustomerSummaryPage((prev) => ({ ...prev, page: 1 }));
       setBillQuery(nextQuery);
       setCustomerRefreshVersion((prev) => prev + 1);
@@ -781,6 +889,26 @@ const Billing = () => {
       operatorKeyword: '',
       targetKeyword: '',
     });
+  };
+
+  const resetPeriodPagination = () => {
+    setPaidSourcesPage((prev) => ({ ...prev, page: 1 }));
+    setGiftAuditSummaryPage((prev) => ({ ...prev, page: 1 }));
+    setGiftAuditPage((prev) => ({ ...prev, page: 1 }));
+    setChannelPage((prev) => ({ ...prev, page: 1 }));
+    setModelPage((prev) => ({ ...prev, page: 1 }));
+    setAuditPage((prev) => ({ ...prev, page: 1 }));
+  };
+
+  const handlePeriodTypeChange = (key) => {
+    resetPeriodPagination();
+    setPeriodType(key);
+    setPeriodValue(getCurrentPeriodValue(key));
+  };
+
+  const handlePeriodValueChange = (value) => {
+    resetPeriodPagination();
+    setPeriodValue(value);
   };
 
   const dashboardTodoColumns = [
@@ -1045,8 +1173,18 @@ const Billing = () => {
         <button
           className='text-left'
           onClick={() => {
+            if (record.user_id === selectedBillUserId) {
+              setSelectedBillUserName(record.username || '');
+              return;
+            }
             setSelectedBillUserId(record.user_id);
             setSelectedBillUserName(record.username || '');
+            setCustomerDetailsPage((prev) => ({
+              ...prev,
+              page: 1,
+              total: 0,
+              items: [],
+            }));
           }}
         >
           <div className='font-medium text-blue-600'>{record.username || '-'}</div>
@@ -1497,7 +1635,7 @@ const Billing = () => {
       <div className='grid grid-cols-1 gap-4 xl:grid-cols-2'>
         <ChartCard
           title='渠道成本占比'
-          loading={channelLoading}
+          loading={channelSummaryLoading}
           hasData={channelChartData.length > 0}
           spec={buildPieSpec(
             channelChartData.map((item) => ({
@@ -1509,7 +1647,7 @@ const Billing = () => {
         />
         <ChartCard
           title='模型成本占比'
-          loading={channelLoading}
+          loading={channelSummaryLoading}
           hasData={modelChartData.length > 0}
           spec={buildPieSpec(
             modelChartData.map((item) => ({
@@ -1523,7 +1661,7 @@ const Billing = () => {
 
       <TableCard
         title='渠道汇总'
-        loading={channelLoading}
+        loading={channelListLoading}
         columns={channelColumns}
         dataSource={channelPage.items || []}
         rowKey={(record) => record.channel_id}
@@ -1536,7 +1674,7 @@ const Billing = () => {
 
       <TableCard
         title='模型成本明细'
-        loading={channelLoading}
+        loading={modelListLoading}
         columns={modelColumns}
         dataSource={modelPage.items || []}
         rowKey={(record, index) =>
@@ -1614,9 +1752,16 @@ const Billing = () => {
         title={`账单明细${selectedBillUserId ? ` - ${selectedBillUserName || `#${selectedBillUserId}`}` : ''}`}
         loading={customerDetailLoading}
         columns={customerDetailColumns}
-        dataSource={customerBillDetails}
+        dataSource={customerDetailsPage.items || []}
         rowKey={(record, index) =>
           `${record.occurred_at}-${record.request_id}-${index}`
+        }
+        pagination={selectedBillUserId ? customerDetailsPage : null}
+        onPageChange={(page) =>
+          setCustomerDetailsPage((prev) => ({ ...prev, page }))
+        }
+        onPageSizeChange={(pageSize) =>
+          setCustomerDetailsPage((prev) => ({ ...prev, page: 1, pageSize }))
         }
       />
     </div>
@@ -1828,10 +1973,7 @@ const Billing = () => {
               <Tabs
                 type='button'
                 activeKey={periodType}
-                onChange={(key) => {
-                  setPeriodType(key);
-                  setPeriodValue(getCurrentPeriodValue(key));
-                }}
+                onChange={handlePeriodTypeChange}
               >
                 <TabPane tab='月度' itemKey='month' />
                 <TabPane tab='年度' itemKey='year' />
@@ -1848,7 +1990,7 @@ const Billing = () => {
                     <Select
                       value={periodValue}
                       optionList={getYearOptionList(periodValue)}
-                      onChange={(value) => setPeriodValue(`${value}`)}
+                      onChange={(value) => handlePeriodValueChange(`${value}`)}
                       style={{ minWidth: 140 }}
                     />
                   ) : (
@@ -1857,7 +1999,9 @@ const Billing = () => {
                       value={getPickerValue(periodType, periodValue)}
                       inputReadOnly
                       onChange={(value) =>
-                        setPeriodValue(getPickerNextValue(periodType, value))
+                        handlePeriodValueChange(
+                          getPickerNextValue(periodType, value),
+                        )
                       }
                     />
                   )}
@@ -1923,4 +2067,3 @@ const Billing = () => {
 };
 
 export default Billing;
-

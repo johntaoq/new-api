@@ -153,12 +153,16 @@ func GetFinanceCustomerBillDetails(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	items, err := model.GetFinanceCustomerBillDetailsV2(c.Query("bill_month"), userID)
+	result, err := model.ListFinanceCustomerBillDetailsV2(
+		c.Query("bill_month"),
+		userID,
+		common.GetPageQuery(c),
+	)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"items": items})
+	common.ApiSuccess(c, result)
 }
 
 func ExportFinanceCustomerBillCSV(c *gin.Context) {

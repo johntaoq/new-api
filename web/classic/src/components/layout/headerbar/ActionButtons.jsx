@@ -17,12 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React from 'react';
-import NewYearButton from './NewYearButton';
+import React, { lazy, Suspense } from 'react';
 import NotificationButton from './NotificationButton';
 import ThemeToggle from './ThemeToggle';
 import LanguageSelector from './LanguageSelector';
 import UserArea from './UserArea';
+
+const NewYearButton = lazy(() => import('./NewYearButton'));
 
 const ActionButtons = ({
   isNewYear,
@@ -42,7 +43,11 @@ const ActionButtons = ({
 }) => {
   return (
     <div className='flex items-center gap-2 md:gap-3'>
-      <NewYearButton isNewYear={isNewYear} />
+      {isNewYear && (
+        <Suspense fallback={null}>
+          <NewYearButton isNewYear={isNewYear} />
+        </Suspense>
+      )}
 
       <NotificationButton
         unreadCount={unreadCount}

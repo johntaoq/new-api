@@ -15,6 +15,7 @@ web/dist
 .env
 one-api
 new-api
+new-api-linux-local
 /__debug_bin*
 .DS_Store
 tiktoken_cache
@@ -36,6 +37,7 @@ data/
 token_estimator_test.go
 skills-lock.json
 .playwright-mcp
+web/default/local-homepage-*.png
 
 # Local-only live probes and scratch test workspaces.
 .local-tests/

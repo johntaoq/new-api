@@ -155,7 +155,10 @@ func GenerateCustomerMonthlyStatement(userId int, billMonth string, force bool) 
 
 	var user User
 	if err := DB.Unscoped().Where("id = ?", userId).First(&user).Error; err != nil {
-		return nil, err
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		user = missingCustomerStatementUser(userId)
 	}
 
 	var channelLedgers []ChannelCostLedger
@@ -312,6 +315,13 @@ func GenerateCustomerMonthlyStatement(userId int, billMonth string, force bool) 
 	}
 
 	return statement, nil
+}
+
+func missingCustomerStatementUser(userId int) User {
+	return User{
+		Id:       userId,
+		Username: fmt.Sprintf("deleted-user-%d", userId),
+	}
 }
 
 func GetCustomerMonthlyStatementByUserAndMonth(userId int, billMonth string) (*CustomerMonthlyStatement, error) {

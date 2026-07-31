@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2025 QuantumNous
+Copyright (C) 2023-2026 QuantumNous
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
@@ -16,40 +16,43 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Link } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
 
-import React, {
-  lazy,
-  Suspense,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-import { Link } from 'react-router-dom';
-import { API } from '../../helpers/api';
-import { showError } from '../../helpers/utils';
-import { StatusContext } from '../../context/Status';
-import { useActualTheme } from '../../context/Theme';
-import { useIsMobile } from '../../hooks/common/useIsMobile';
+import { useStatus } from '@/hooks/use-status'
 
-const NoticeModal = lazy(() => import('../../components/layout/NoticeModal'));
+type EnterpriseHomeProps = {
+  isAuthenticated: boolean
+}
 
 const providers = [
   { name: 'Azure', mark: <span className='ukx-mark ukx-mark-azure' /> },
   { name: 'AWS', mark: <span className='ukx-mark ukx-mark-aws'>AWS</span> },
   { name: 'GCP', mark: <span className='ukx-mark ukx-mark-gcp' /> },
-  {
-    name: 'DeepSeek',
-    mark: <span className='ukx-mark ukx-mark-deepseek'>DS</span>,
-  },
+  { name: 'DeepSeek', mark: <span className='ukx-mark ukx-mark-deepseek'>DS</span> },
   { name: '豆包', mark: <span className='ukx-mark ukx-mark-doubao'>豆</span> },
   { name: 'Kimi', mark: <span className='ukx-mark ukx-mark-kimi' /> },
   { name: 'xAI', mark: <span className='ukx-mark ukx-mark-xai'>xAI</span> },
-];
+]
 
-function EnterpriseHome({ isAuthenticated, docsLink }) {
-  const docsUrl = docsLink || 'https://docs.newapi.pro';
+function DocsLink(props: { className: string; children: ReactNode }) {
+  const { status } = useStatus()
+  const docsUrl =
+    (status?.docs_link as string | undefined) || 'https://docs.newapi.pro'
 
+  return (
+    <a
+      href={docsUrl}
+      target={docsUrl.startsWith('http') ? '_blank' : undefined}
+      rel='noreferrer'
+      className={props.className}
+    >
+      {props.children}
+    </a>
+  )
+}
+
+export function EnterpriseHome({ isAuthenticated }: EnterpriseHomeProps) {
   return (
     <main className='ukx-home'>
       <style>{`
@@ -60,13 +63,58 @@ function EnterpriseHome({ isAuthenticated, docsLink }) {
           font-family: Inter, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
         }
 
+        .ukx-home-header > div {
+          max-width: 1120px !important;
+          padding-top: 10px !important;
+        }
+
+        .ukx-home-header nav {
+          min-height: 52px !important;
+          height: 52px !important;
+          padding: 0 10px 0 14px !important;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          border-radius: 18px;
+          background: rgba(8, 18, 32, 0.78) !important;
+          box-shadow: 0 14px 36px rgba(3, 9, 18, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+          color: rgba(255, 255, 255, 0.92);
+          backdrop-filter: blur(18px) saturate(1.18);
+        }
+
+        .ukx-home-header nav a,
+        .ukx-home-header nav span {
+          color: rgba(255, 255, 255, 0.82);
+        }
+
+        .ukx-home-header nav a:hover,
+        .ukx-home-header nav a[data-status="active"],
+        .ukx-home-header nav .text-foreground {
+          color: #fff !important;
+        }
+
+        .ukx-home-header nav .text-muted-foreground {
+          color: rgba(255, 255, 255, 0.78) !important;
+        }
+
+        .ukx-home-header nav button {
+          color: rgba(255, 255, 255, 0.9);
+        }
+
+        .ukx-home-header nav button:not([class*="bg-primary"]) {
+          background: rgba(255, 255, 255, 0.08);
+          border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        .ukx-home-header nav [class*="bg-border"] {
+          background: rgba(255, 255, 255, 0.18) !important;
+        }
+
         .ukx-hero {
           position: relative;
           min-height: 76vh;
           display: grid;
           align-items: center;
           overflow: hidden;
-          padding: 104px 48px 92px;
+          padding: 112px 48px 92px;
           color: #fff;
           background:
             linear-gradient(rgba(5, 18, 34, 0.72), rgba(5, 18, 34, 0.72)),
@@ -398,6 +446,20 @@ function EnterpriseHome({ isAuthenticated, docsLink }) {
         .ukx-principle h3 { margin: 16px 0 10px; font-size: 19px; line-height: 1.3; font-weight: 760; }
         .ukx-principle p { margin: 0; color: #5d687a; font-size: 15px; line-height: 1.75; }
 
+        .ukx-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          min-height: 72px;
+          padding: 0 48px;
+          color: rgba(255, 255, 255, 0.78);
+          background: #15171d;
+          font-size: 14px;
+        }
+
+        .ukx-footer a { color: #66a9ff; font-weight: 650; text-decoration: none; }
+
         @keyframes ukx-light-speed {
           0% { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0; }
           100% { background-position: 1000px 0, -920px 0, 1080px 0, -860px 0, 1040px 0, -940px 0, 1180px 0, 520px 0; }
@@ -435,6 +497,13 @@ function EnterpriseHome({ isAuthenticated, docsLink }) {
           .ukx-logo-wall { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .ukx-logo-card { justify-content: flex-start; }
           .ukx-principles { grid-template-columns: 1fr; }
+          .ukx-footer {
+            min-height: 96px;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 20px 24px;
+          }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -454,16 +523,14 @@ function EnterpriseHome({ isAuthenticated, docsLink }) {
           <div className='ukx-eyebrow'>Enterprise AI Model Service</div>
           <h1 className='ukx-title'>稳定的企业级原厂模型服务</h1>
           <p className='ukx-lead'>
-            UniKeyX 依托 Azure、AWS 与 GCP
-            云基础设施，提供纯净、可靠、长期可用的大模型接入服务，满足企业 7x24
-            小时持续使用需求。
+            UniKeyX 依托 Azure、AWS 与 GCP 云基础设施，提供纯净、可靠、长期可用的大模型接入服务，满足企业 7x24 小时持续使用需求。
           </p>
           <p className='ukx-mission'>
             我们的宗旨：模型跑得稳，服务靠得住，用户用得起。
           </p>
           <div className='ukx-actions'>
             {isAuthenticated ? (
-              <Link className='ukx-button primary' to='/console'>
+              <Link className='ukx-button primary' to='/dashboard'>
                 进入控制台
               </Link>
             ) : (
@@ -471,19 +538,12 @@ function EnterpriseHome({ isAuthenticated, docsLink }) {
                 <Link className='ukx-button primary' to='/register'>
                   注册账号
                 </Link>
-                <Link className='ukx-button secondary' to='/login'>
+                <Link className='ukx-button secondary' to='/sign-in'>
                   登录
                 </Link>
               </>
             )}
-            <a
-              className='ukx-button secondary'
-              href={docsUrl}
-              target={docsUrl.startsWith('http') ? '_blank' : undefined}
-              rel='noreferrer'
-            >
-              查看文档
-            </a>
+            <DocsLink className='ukx-button secondary'>查看文档</DocsLink>
           </div>
         </div>
       </section>
@@ -495,12 +555,12 @@ function EnterpriseHome({ isAuthenticated, docsLink }) {
         </div>
         <div className='ukx-entry-actions'>
           {isAuthenticated ? (
-            <Link className='ukx-button primary' to='/console'>
+            <Link className='ukx-button primary' to='/dashboard'>
               进入控制台
             </Link>
           ) : (
             <>
-              <Link className='ukx-button primary' to='/login'>
+              <Link className='ukx-button primary' to='/sign-in'>
                 登录
               </Link>
               <Link className='ukx-button secondary' to='/register'>
@@ -518,8 +578,7 @@ function EnterpriseHome({ isAuthenticated, docsLink }) {
         <div>
           <p className='ukx-trust-title'>整合国内外原厂模型与主流云基础设施</p>
           <p className='ukx-trust-copy'>
-            背靠 Azure、AWS、GCP 等云平台，连接 DeepSeek、豆包、Kimi、xAI
-            等国内外模型能力，为企业提供稳定、清晰、可持续的统一接入服务。
+            背靠 Azure、AWS、GCP 等云平台，连接 DeepSeek、豆包、Kimi、xAI 等国内外模型能力，为企业提供稳定、清晰、可持续的统一接入服务。
           </p>
         </div>
         <div className='ukx-logo-wall' aria-label='云平台与模型品牌'>
@@ -536,9 +595,7 @@ function EnterpriseHome({ isAuthenticated, docsLink }) {
         <article className='ukx-principle'>
           <div className='ukx-principle-index'>01</div>
           <h3>真模型</h3>
-          <p>
-            连接国内外原厂模型能力，少一点包装，多一点透明，让每次调用都清清楚楚。
-          </p>
+          <p>连接国内外原厂模型能力，少一点包装，多一点透明，让每次调用都清清楚楚。</p>
         </article>
         <article className='ukx-principle'>
           <div className='ukx-principle-index'>02</div>
@@ -548,121 +605,23 @@ function EnterpriseHome({ isAuthenticated, docsLink }) {
         <article className='ukx-principle'>
           <div className='ukx-principle-index'>03</div>
           <h3>长久用</h3>
-          <p>
-            不做短期噱头，不透支信任。踏踏实实把服务做好，让客户放心把业务交给我们。
-          </p>
+          <p>不做短期噱头，不透支信任。踏踏实实把服务做好，让客户放心把业务交给我们。</p>
         </article>
       </section>
+
+      <footer className='ukx-footer'>
+        <span>© 2026 UniKeyX API. 版权所有</span>
+        <span>
+          设计与开发由{' '}
+          <a
+            href='https://github.com/QuantumNous/new-api'
+            target='_blank'
+            rel='noopener noreferrer'
+          >
+            New API
+          </a>
+        </span>
+      </footer>
     </main>
-  );
+  )
 }
-
-const Home = () => {
-  const [statusState] = useContext(StatusContext);
-  const actualTheme = useActualTheme();
-  const [homePageContentLoaded, setHomePageContentLoaded] = useState(false);
-  const [homePageContent, setHomePageContent] = useState('');
-  const [noticeVisible, setNoticeVisible] = useState(false);
-  const isMobile = useIsMobile();
-
-  const docsLink = statusState?.status?.docs_link || '';
-  const isAuthenticated = useMemo(() => {
-    return Boolean(localStorage.getItem('user'));
-  }, []);
-
-  useEffect(() => {
-    const checkNoticeAndShow = async () => {
-      const lastCloseDate = localStorage.getItem('notice_close_date');
-      const today = new Date().toDateString();
-      if (lastCloseDate === today) {
-        return;
-      }
-
-      try {
-        const res = await API.get('/api/notice');
-        const { success, data } = res.data;
-        if (success && data && data.trim() !== '') {
-          setNoticeVisible(true);
-        }
-      } catch (error) {
-        console.error('Failed to load notice:', error);
-      }
-    };
-
-    checkNoticeAndShow();
-  }, []);
-
-  useEffect(() => {
-    const displayHomePageContent = async () => {
-      const cachedContent = localStorage.getItem('home_page_content') || '';
-      setHomePageContent(cachedContent);
-
-      try {
-        const res = await API.get('/api/home_page_content');
-        const { success, message, data } = res.data;
-        if (success) {
-          let content = data || '';
-          if (content && !content.startsWith('https://')) {
-            const { marked } = await import('marked');
-            content = marked.parse(content);
-          }
-          setHomePageContent(content);
-          localStorage.setItem('home_page_content', content);
-        } else {
-          showError(message);
-          setHomePageContent('');
-        }
-      } catch (error) {
-        console.error('Failed to load home page content:', error);
-      } finally {
-        setHomePageContentLoaded(true);
-      }
-    };
-
-    displayHomePageContent();
-  }, []);
-
-  const handleIframeLoad = (event) => {
-    event.currentTarget.contentWindow?.postMessage(
-      { themeMode: actualTheme },
-      '*',
-    );
-  };
-
-  const shouldShowCustomContent =
-    homePageContentLoaded && homePageContent && homePageContent.trim() !== '';
-
-  return (
-    <div className='classic-page-fill classic-home-page w-full overflow-x-hidden'>
-      {noticeVisible && (
-        <Suspense fallback={null}>
-          <NoticeModal
-            visible={noticeVisible}
-            onClose={() => setNoticeVisible(false)}
-            isMobile={isMobile}
-          />
-        </Suspense>
-      )}
-      {shouldShowCustomContent ? (
-        <div className='classic-page-fill overflow-x-hidden w-full'>
-          {homePageContent.startsWith('https://') ? (
-            <iframe
-              src={homePageContent}
-              className='w-full h-screen border-none'
-              onLoad={handleIframeLoad}
-            />
-          ) : (
-            <div
-              className='mt-[60px]'
-              dangerouslySetInnerHTML={{ __html: homePageContent }}
-            />
-          )}
-        </div>
-      ) : (
-        <EnterpriseHome isAuthenticated={isAuthenticated} docsLink={docsLink} />
-      )}
-    </div>
-  );
-};
-
-export default Home;

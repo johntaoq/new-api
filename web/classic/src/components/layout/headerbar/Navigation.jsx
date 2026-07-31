@@ -27,11 +27,14 @@ const Navigation = ({
   isLoading,
   userState,
   pricingRequireAuth,
+  isHomeRoute,
 }) => {
   const renderNavLinks = () => {
     const baseClasses =
       'flex-shrink-0 flex items-center gap-1 font-semibold rounded-md transition-all duration-200 ease-in-out';
-    const hoverClasses = 'hover:text-semi-color-primary';
+    const hoverClasses = isHomeRoute
+      ? '!text-white hover:!text-white hover:bg-white/10'
+      : 'hover:text-semi-color-primary';
     const spacingClasses = isMobile ? 'p-1' : 'p-2';
 
     const commonLinkClasses = `${baseClasses} ${spacingClasses} ${hoverClasses}`;

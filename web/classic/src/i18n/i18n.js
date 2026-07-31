@@ -20,31 +20,39 @@ For commercial licensing, please contact support@quantumnous.com
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
+import { normalizeLanguage, supportedLanguages } from './language';
 
-import enTranslation from './locales/en.json';
-import frTranslation from './locales/fr.json';
-import zhCNTranslation from './locales/zh-CN.json';
-import zhTWTranslation from './locales/zh-TW.json';
-import ruTranslation from './locales/ru.json';
-import jaTranslation from './locales/ja.json';
-import viTranslation from './locales/vi.json';
-import { supportedLanguages } from './language';
+const translationLoaders = {
+  en: () => import('./locales/en.json'),
+  fr: () => import('./locales/fr.json'),
+  'zh-CN': () => import('./locales/zh-CN.json'),
+  'zh-TW': () => import('./locales/zh-TW.json'),
+  ru: () => import('./locales/ru.json'),
+  ja: () => import('./locales/ja.json'),
+  vi: () => import('./locales/vi.json'),
+};
 
-i18n
+const translationBackend = {
+  type: 'backend',
+  init() {},
+  read(language, _namespace, callback) {
+    const normalizedLanguage = normalizeLanguage(language);
+    const loader =
+      translationLoaders[normalizedLanguage] || translationLoaders['zh-CN'];
+
+    loader()
+      .then((module) => callback(null, module.default || module))
+      .catch((error) => callback(error, false));
+  },
+};
+
+export const i18nReady = i18n
   .use(LanguageDetector)
+  .use(translationBackend)
   .use(initReactI18next)
   .init({
     load: 'currentOnly',
     supportedLngs: supportedLanguages,
-    resources: {
-      en: enTranslation,
-      'zh-CN': zhCNTranslation,
-      'zh-TW': zhTWTranslation,
-      fr: frTranslation,
-      ru: ruTranslation,
-      ja: jaTranslation,
-      vi: viTranslation,
-    },
     fallbackLng: 'zh-CN',
     nsSeparator: false,
     interpolation: {
@@ -52,6 +60,8 @@ i18n
     },
   });
 
-window.__i18n = i18n;
+if (typeof window !== 'undefined') {
+  window.__i18n = i18n;
+}
 
 export default i18n;

@@ -20,43 +20,62 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { lazy, Suspense, useContext, useMemo } from 'react';
 import { Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
-import User from './pages/User';
-import { AuthRedirect, PrivateRoute, AdminRoute, PermissionRoute } from './helpers';
-import RegisterForm from './components/auth/RegisterForm';
-import LoginForm from './components/auth/LoginForm';
-import NotFound from './pages/NotFound';
-import Forbidden from './pages/Forbidden';
-import Setting from './pages/Setting';
+import { AuthRedirect, PermissionRoute, PrivateRoute } from './helpers/auth';
 import { StatusContext } from './context/Status';
-
-import PasswordResetForm from './components/auth/PasswordResetForm';
-import PasswordResetConfirm from './components/auth/PasswordResetConfirm';
-import Channel from './pages/Channel';
-import Token from './pages/Token';
-import Redemption from './pages/Redemption';
-import TopUp from './pages/TopUp';
-import Log from './pages/Log';
-import Chat from './pages/Chat';
-import Chat2Link from './pages/Chat2Link';
-import MjProxy from './pages/Midjourney';
-import Pricing from './pages/Pricing';
-import Task from './pages/Task';
-import ModelPage from './pages/Model';
-import ModelDeploymentPage from './pages/ModelDeployment';
-import Playground from './pages/Playground';
-import ImagePlayground from './pages/ImagePlayground';
-import Subscription from './pages/Subscription';
-import Billing from './pages/Billing';
-import OAuth2Callback from './components/auth/OAuth2Callback';
-import PersonalSetting from './components/settings/PersonalSetting';
-import Setup from './pages/Setup';
 import SetupCheck from './components/layout/SetupCheck';
 
-const Home = lazy(() => import('./pages/Home'));
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const About = lazy(() => import('./pages/About'));
-const UserAgreement = lazy(() => import('./pages/UserAgreement'));
-const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const lazyPage = (loader) => {
+  const Component = lazy(loader);
+
+  return function LazyPage(props) {
+    return (
+      <Suspense fallback={<Loading />}>
+        <Component {...props} />
+      </Suspense>
+    );
+  };
+};
+
+const Home = lazyPage(() => import('./pages/Home'));
+const Dashboard = lazyPage(() => import('./pages/Dashboard'));
+const About = lazyPage(() => import('./pages/About'));
+const UserAgreement = lazyPage(() => import('./pages/UserAgreement'));
+const PrivacyPolicy = lazyPage(() => import('./pages/PrivacyPolicy'));
+const User = lazyPage(() => import('./pages/User'));
+const RegisterForm = lazyPage(() => import('./components/auth/RegisterForm'));
+const LoginForm = lazyPage(() => import('./components/auth/LoginForm'));
+const NotFound = lazyPage(() => import('./pages/NotFound'));
+const Forbidden = lazyPage(() => import('./pages/Forbidden'));
+const Setting = lazyPage(() => import('./pages/Setting'));
+const PasswordResetForm = lazyPage(
+  () => import('./components/auth/PasswordResetForm'),
+);
+const PasswordResetConfirm = lazyPage(
+  () => import('./components/auth/PasswordResetConfirm'),
+);
+const Channel = lazyPage(() => import('./pages/Channel'));
+const Token = lazyPage(() => import('./pages/Token'));
+const Redemption = lazyPage(() => import('./pages/Redemption'));
+const TopUp = lazyPage(() => import('./pages/TopUp'));
+const Log = lazyPage(() => import('./pages/Log'));
+const Chat = lazyPage(() => import('./pages/Chat'));
+const Chat2Link = lazyPage(() => import('./pages/Chat2Link'));
+const MjProxy = lazyPage(() => import('./pages/Midjourney'));
+const Pricing = lazyPage(() => import('./pages/Pricing'));
+const Task = lazyPage(() => import('./pages/Task'));
+const ModelPage = lazyPage(() => import('./pages/Model'));
+const ModelDeploymentPage = lazyPage(() => import('./pages/ModelDeployment'));
+const Playground = lazyPage(() => import('./pages/Playground'));
+const ImagePlayground = lazyPage(() => import('./pages/ImagePlayground'));
+const Subscription = lazyPage(() => import('./pages/Subscription'));
+const Billing = lazyPage(() => import('./pages/Billing'));
+const OAuth2Callback = lazyPage(
+  () => import('./components/auth/OAuth2Callback'),
+);
+const PersonalSetting = lazyPage(
+  () => import('./components/settings/PersonalSetting'),
+);
+const Setup = lazyPage(() => import('./pages/Setup'));
 
 function DynamicOAuth2Callback() {
   const { provider } = useParams();
@@ -136,7 +155,14 @@ function App() {
         <Route
           path='/console/billing'
           element={
-            <PermissionRoute permissions={['finance.view', 'finance.write', 'finance.audit.view', 'system.manage']}>
+            <PermissionRoute
+              permissions={[
+                'finance.view',
+                'finance.write',
+                'finance.audit.view',
+                'system.manage',
+              ]}
+            >
               <Billing />
             </PermissionRoute>
           }
@@ -184,7 +210,9 @@ function App() {
         <Route
           path='/console/user'
           element={
-            <PermissionRoute permissions={['ops.manage', 'finance.write', 'system.manage']}>
+            <PermissionRoute
+              permissions={['ops.manage', 'finance.write', 'system.manage']}
+            >
               <User />
             </PermissionRoute>
           }
