@@ -176,15 +176,15 @@ const parseImageSize = (value = '1024x1024') => {
   };
 };
 
-const buildImageModelOptions = (models, usableGroup, autoGroups) => {
+const buildImageModelOptions = (models, usableGroup) => {
   if (!Array.isArray(models)) {
     return [];
   }
 
-  const usableGroups = new Set([
-    ...Object.keys(usableGroup || {}),
-    ...(Array.isArray(autoGroups) ? autoGroups : []),
-  ]);
+  const usableGroups = Object.keys(usableGroup || {}).filter(
+    (groupName) => groupName && groupName !== 'auto',
+  );
+  const usableGroupSet = new Set(usableGroups);
 
   return models
     .filter((model) => {
@@ -195,32 +195,64 @@ const buildImageModelOptions = (models, usableGroup, autoGroups) => {
       return supportsImageEndpoint || isImageModelName(model.model_name);
     })
     .filter((model) => {
-      if (usableGroups.size === 0 || !Array.isArray(model.enable_groups)) {
-        return true;
+      const enabledGroups = Array.isArray(model.enable_groups)
+        ? model.enable_groups
+        : [];
+      if (enabledGroups.includes('all')) {
+        return usableGroups.length > 0;
       }
-      return model.enable_groups.some((item) => usableGroups.has(item));
+      return enabledGroups.some((item) => usableGroupSet.has(item));
     })
-    .map((model) => ({
-      label: model.model_name,
-      value: model.model_name,
-      description: model.supported_endpoint_types?.join(', ') || '',
-      editCapable: isEditCapableModel(model.model_name),
-    }))
+    .map((model) => {
+      const enabledGroups = Array.isArray(model.enable_groups)
+        ? model.enable_groups
+        : [];
+      const availableGroups = enabledGroups.includes('all')
+        ? usableGroups
+        : enabledGroups.filter((item) => usableGroupSet.has(item));
+      return {
+        label: model.model_name,
+        value: model.model_name,
+        description: model.supported_endpoint_types?.join(', ') || '',
+        editCapable: isEditCapableModel(model.model_name),
+        enableGroups: availableGroups,
+      };
+    })
     .sort((a, b) => a.value.localeCompare(b.value));
 };
 
-const buildFallbackModelOptions = (models) => {
-  if (!Array.isArray(models)) {
-    return [];
+const buildImageGroupOptions = (imageModels, usableGroup, autoGroups) => {
+  const groupsWithImageModels = new Set(
+    imageModels.flatMap((item) => item.enableGroups || []),
+  );
+  const options = Object.entries(usableGroup || {})
+    .filter(([value]) => value && value !== 'auto')
+    .filter(([value]) => groupsWithImageModels.has(value))
+    .map(([value, description]) => ({
+      label: description || value,
+      value,
+    }));
+
+  const autoImageGroups = (Array.isArray(autoGroups) ? autoGroups : []).filter(
+    (value) => groupsWithImageModels.has(value),
+  );
+  if (usableGroup?.auto && autoImageGroups.length > 0) {
+    options.unshift({
+      label: usableGroup.auto || '自动选择',
+      value: 'auto',
+    });
   }
-  return models
-    .filter(isImageModelName)
-    .map((model) => ({
-      label: model,
-      value: model,
-      editCapable: isEditCapableModel(model),
-    }))
-    .sort((a, b) => a.value.localeCompare(b.value));
+  return options;
+};
+
+const modelSupportsImageGroup = (modelOption, group, autoGroups) => {
+  const enabledGroups = modelOption?.enableGroups || [];
+  if (group === 'auto') {
+    return (Array.isArray(autoGroups) ? autoGroups : []).some((item) =>
+      enabledGroups.includes(item),
+    );
+  }
+  return enabledGroups.includes(group);
 };
 
 const getImageSource = (item) => {
@@ -323,7 +355,8 @@ const persistHistory = (items) => {
 };
 
 const ImagePlayground = () => {
-  const [models, setModels] = useState([]);
+  const [allImageModels, setAllImageModels] = useState([]);
+  const [autoGroups, setAutoGroups] = useState([]);
   const [groups, setGroups] = useState([]);
   const [model, setModel] = useState('');
   const [group, setGroup] = useState('');
@@ -347,6 +380,13 @@ const ImagePlayground = () => {
     height: 0,
   });
 
+  const models = useMemo(
+    () =>
+      allImageModels.filter((item) =>
+        modelSupportsImageGroup(item, group, autoGroups),
+      ),
+    [allImageModels, autoGroups, group],
+  );
   const hasModels = models.length > 0;
 
   const loadModels = useCallback(async () => {
@@ -359,61 +399,49 @@ const ImagePlayground = () => {
         const options = buildImageModelOptions(
           pricingRes.data.data,
           pricingRes.data.usable_group,
-          pricingRes.data.auto_groups,
         );
-        setModels(options);
-        setModel((current) =>
-          options.some((option) => option.value === current)
+        const nextAutoGroups = Array.isArray(pricingRes.data.auto_groups)
+          ? pricingRes.data.auto_groups
+          : [];
+        const groupOptions = buildImageGroupOptions(
+          options,
+          pricingRes.data.usable_group,
+          nextAutoGroups,
+        );
+        setAllImageModels(options);
+        setAutoGroups(nextAutoGroups);
+        setGroups(groupOptions);
+        setGroup((current) =>
+          groupOptions.some((option) => option.value === current)
             ? current
-            : options[0]?.value || '',
+            : groupOptions[0]?.value || '',
         );
         return;
       }
-
-      const modelsRes = await API.get('/api/user/models', {
-        disableDuplicate: true,
-      });
-      const fallbackOptions = buildFallbackModelOptions(modelsRes.data?.data);
-      setModels(fallbackOptions);
-      setModel((current) =>
-        fallbackOptions.some((option) => option.value === current)
-          ? current
-          : fallbackOptions[0]?.value || '',
-      );
+      throw new Error(pricingRes.data?.message || '加载图片模型与分组失败');
     } catch (error) {
       Toast.error('加载图片模型失败');
-      setModels([]);
+      setAllImageModels([]);
+      setAutoGroups([]);
+      setGroups([]);
+      setGroup('');
       setModel('');
     } finally {
       setLoadingModels(false);
     }
   }, []);
 
-  const loadGroups = useCallback(async () => {
-    try {
-      const res = await API.get('/api/user/self/groups');
-      if (!res.data?.success || !res.data?.data) {
-        return;
-      }
-      const options = Object.entries(res.data.data).map(([value, info]) => ({
-        label: info?.desc || value,
-        value,
-      }));
-      setGroups(options);
-      setGroup((current) =>
-        options.some((option) => option.value === current)
-          ? current
-          : options[0]?.value || '',
-      );
-    } catch (error) {
-      setGroups([]);
-    }
-  }, []);
-
   useEffect(() => {
     loadModels();
-    loadGroups();
-  }, [loadGroups, loadModels]);
+  }, [loadModels]);
+
+  useEffect(() => {
+    setModel((current) =>
+      models.some((option) => option.value === current)
+        ? current
+        : models[0]?.value || '',
+    );
+  }, [models]);
 
   const selectedModelMeta = useMemo(
     () => models.find((item) => item.value === model),
@@ -808,7 +836,8 @@ const ImagePlayground = () => {
                   value={group}
                   onChange={setGroup}
                   optionList={groups}
-                  placeholder='默认分组'
+                  placeholder='选择图片模型分组'
+                  emptyContent='当前权限下没有包含图片模型的分组'
                   style={{ width: '100%' }}
                   disabled={groups.length === 0}
                 />

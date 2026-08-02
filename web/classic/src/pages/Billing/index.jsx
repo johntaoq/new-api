@@ -81,7 +81,8 @@ const formatTokens = (value) => Number(value || 0).toLocaleString();
 const getCurrentPeriodValue = (periodType) =>
   periodType === 'year' ? dayjs().format('YYYY') : dayjs().format('YYYY-MM');
 
-const getPickerType = (periodType) => (periodType === 'year' ? 'year' : 'month');
+const getPickerType = (periodType) =>
+  periodType === 'year' ? 'year' : 'month';
 
 const getPickerValue = (periodType, period) => {
   if (!period) return undefined;
@@ -89,8 +90,15 @@ const getPickerValue = (periodType, period) => {
     const year = Number.parseInt(`${period}`, 10);
     return Number.isFinite(year) ? new Date(year, 0, 1) : undefined;
   }
-  const [year, month] = `${period}`.split('-').map((part) => Number.parseInt(part, 10));
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+  const [year, month] = `${period}`
+    .split('-')
+    .map((part) => Number.parseInt(part, 10));
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    month < 1 ||
+    month > 12
+  ) {
     return undefined;
   }
   return new Date(year, month - 1, 1);
@@ -104,7 +112,10 @@ const getPickerNextValue = (periodType, value) => {
 
 const getYearOptionList = (selectedYear) => {
   const currentYear = dayjs().year();
-  const normalizedSelected = Number.parseInt(`${selectedYear || currentYear}`, 10);
+  const normalizedSelected = Number.parseInt(
+    `${selectedYear || currentYear}`,
+    10,
+  );
   const anchorYear = Number.isFinite(normalizedSelected)
     ? normalizedSelected
     : currentYear;
@@ -240,13 +251,13 @@ const buildPieSpec = (data, title) => ({
   legends: {
     visible: true,
     orient: 'bottom',
-    item: { label: { style: { fill: '#cbd5f5', fontSize: 12 } } },
+    item: { label: { style: { fontSize: 12 } } },
   },
-  label: { visible: true, style: { fontSize: 12, fill: '#f8fafc' } },
+  label: { visible: true, style: { fontSize: 12 } },
   title: {
     visible: true,
     text: title,
-    textStyle: { fill: '#e2e8f0', fontSize: 14, fontWeight: 600 },
+    textStyle: { fontSize: 14, fontWeight: 600 },
   },
   pie: {
     style: { cornerRadius: 8 },
@@ -257,36 +268,21 @@ const buildPieSpec = (data, title) => ({
 });
 
 const MetricCard = ({ icon: Icon, title, value, helper, tone = 'slate' }) => {
-  const toneClass = {
-    slate:
-      'border-cyan-400/20 from-[#121e5f]/95 via-[#0d163f]/96 to-[#09112e]/98 shadow-[0_22px_60px_rgba(34,211,238,0.16)]',
-    emerald:
-      'border-sky-400/20 from-[#10235e]/95 via-[#0d1b49]/96 to-[#0a122f]/98 shadow-[0_22px_60px_rgba(56,189,248,0.16)]',
-    amber:
-      'border-fuchsia-400/20 from-[#231759]/95 via-[#15133f]/96 to-[#0b102d]/98 shadow-[0_22px_60px_rgba(217,70,239,0.18)]',
-    sky:
-      'border-indigo-400/20 from-[#1c215c]/95 via-[#121744]/96 to-[#09102b]/98 shadow-[0_22px_60px_rgba(99,102,241,0.18)]',
-    rose:
-      'border-pink-400/20 from-[#281556]/95 via-[#1b123f]/96 to-[#0c102d]/98 shadow-[0_22px_60px_rgba(236,72,153,0.18)]',
-  }[tone];
-
   return (
     <Card
       bordered
-      className={`!rounded-[28px] border bg-gradient-to-br backdrop-blur-sm ${toneClass || ''}`}
+      className={`billing-metric-card billing-metric-card--${tone}`}
       bodyStyle={{ padding: 18, position: 'relative', overflow: 'hidden' }}
     >
-      <div className='pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.14),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(236,72,153,0.12),transparent_28%)]' />
-      <div className='pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/80 to-transparent' />
       <div className='flex items-start justify-between gap-3'>
         <div className='min-w-0'>
-          <div className='text-[11px] uppercase tracking-[0.28em] text-slate-400'>{title}</div>
-          <div className='mt-3 text-2xl font-semibold break-all text-slate-50'>{value}</div>
+          <div className='billing-metric-title'>{title}</div>
+          <div className='billing-metric-value'>{value}</div>
           {helper ? (
-            <div className='mt-2 text-xs text-slate-400 break-all leading-5'>{helper}</div>
+            <div className='billing-metric-helper'>{helper}</div>
           ) : null}
         </div>
-        <div className='rounded-2xl border border-cyan-300/20 bg-white/5 p-3 text-cyan-200 shadow-[0_10px_30px_rgba(8,47,73,0.35)] backdrop-blur-sm'>
+        <div className='billing-metric-icon'>
           <Icon size={18} strokeWidth={2.2} />
         </div>
       </div>
@@ -309,13 +305,11 @@ const TableCard = ({
 }) => (
   <Card
     bordered
-    className='!rounded-[28px] border border-cyan-400/15 bg-[linear-gradient(180deg,rgba(17,26,72,0.94),rgba(8,13,36,0.98))] shadow-[0_26px_70px_rgba(2,6,23,0.48)] backdrop-blur-xl'
-    title={<span className='text-base font-semibold tracking-[0.08em] text-slate-100'>{title}</span>}
+    className='billing-surface-card billing-table-card'
+    title={<span className='billing-card-title'>{title}</span>}
     headerExtraContent={extra}
     bodyStyle={{ padding: 0, position: 'relative', overflow: 'hidden' }}
   >
-    <div className='pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.10),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.08),transparent_22%)]' />
-    <div className='pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent' />
     <CardTable
       columns={columns}
       dataSource={dataSource}
@@ -325,10 +319,12 @@ const TableCard = ({
       pagination={false}
     />
     {footer ? (
-      <div style={{ borderTop: '1px solid var(--semi-color-border)' }}>{footer}</div>
+      <div style={{ borderTop: '1px solid var(--semi-color-border)' }}>
+        {footer}
+      </div>
     ) : null}
     {pagination && pagination.total > 0 ? (
-      <div className='flex justify-end border-t border-white/10 px-4 py-3'>
+      <div className='billing-pagination flex justify-end px-4 py-3'>
         <Pagination
           currentPage={pagination.page}
           pageSize={pagination.pageSize}
@@ -346,12 +342,10 @@ const TableCard = ({
 const ChartCard = ({ title, spec, loading, hasData }) => (
   <Card
     bordered
-    className='!rounded-[28px] border border-fuchsia-400/15 bg-[linear-gradient(180deg,rgba(23,21,76,0.94),rgba(8,11,38,0.98))] shadow-[0_26px_70px_rgba(2,6,23,0.48)] backdrop-blur-xl'
-    title={<span className='text-base font-semibold tracking-[0.08em] text-slate-100'>{title}</span>}
+    className='billing-surface-card billing-chart-card'
+    title={<span className='billing-card-title'>{title}</span>}
     bodyStyle={{ padding: 0, position: 'relative', overflow: 'hidden' }}
   >
-    <div className='pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(236,72,153,0.10),transparent_22%),radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.10),transparent_22%)]' />
-    <div className='pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-300/70 to-transparent' />
     <div className='h-[340px] p-3'>
       {loading ? (
         <div className='flex h-full items-center justify-center'>
@@ -369,11 +363,15 @@ const ChartCard = ({ title, spec, loading, hasData }) => (
 );
 
 const Billing = () => {
-  const canWriteFinance = hasPermission('finance.write') || hasPermission('system.manage');
-  const canViewAudit = hasPermission('finance.audit.view') || hasPermission('system.manage');
+  const canWriteFinance =
+    hasPermission('finance.write') || hasPermission('system.manage');
+  const canViewAudit =
+    hasPermission('finance.audit.view') || hasPermission('system.manage');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [periodType, setPeriodType] = useState('month');
-  const [periodValue, setPeriodValue] = useState(getCurrentPeriodValue('month'));
+  const [periodValue, setPeriodValue] = useState(
+    getCurrentPeriodValue('month'),
+  );
   const [dashboardUnit, setDashboardUnit] = useState('usd');
   const [rankingView, setRankingView] = useState('income');
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -387,9 +385,8 @@ const Billing = () => {
   const [revenueSummary, setRevenueSummary] = useState(null);
   const [paidSourcesPage, setPaidSourcesPage] = useState(createPageState());
   const [giftAuditView, setGiftAuditView] = useState('summary');
-  const [giftAuditSummaryPage, setGiftAuditSummaryPage] = useState(
-    createPageState(),
-  );
+  const [giftAuditSummaryPage, setGiftAuditSummaryPage] =
+    useState(createPageState());
   const [giftAuditPage, setGiftAuditPage] = useState(createPageState());
 
   const [channelMetric, setChannelMetric] = useState('usd');
@@ -401,7 +398,9 @@ const Billing = () => {
   const [modelPage, setModelPage] = useState(createPageState());
 
   const [customerUnit, setCustomerUnit] = useState('usd');
-  const [billMonthInput, setBillMonthInput] = useState(dayjs().format('YYYY-MM'));
+  const [billMonthInput, setBillMonthInput] = useState(
+    dayjs().format('YYYY-MM'),
+  );
   const [billKeywordInput, setBillKeywordInput] = useState('');
   const [billQuery, setBillQuery] = useState({
     billMonth: dayjs().format('YYYY-MM'),
@@ -411,12 +410,10 @@ const Billing = () => {
   const [customerDetailLoading, setCustomerDetailLoading] = useState(false);
   const [customerGenerating, setCustomerGenerating] = useState(false);
   const [customerRefreshVersion, setCustomerRefreshVersion] = useState(0);
-  const [customerSummaryPage, setCustomerSummaryPage] = useState(
-    createPageState(),
-  );
-  const [customerDetailsPage, setCustomerDetailsPage] = useState(
-    createPageState(),
-  );
+  const [customerSummaryPage, setCustomerSummaryPage] =
+    useState(createPageState());
+  const [customerDetailsPage, setCustomerDetailsPage] =
+    useState(createPageState());
   const [selectedBillUserId, setSelectedBillUserId] = useState(null);
   const [selectedBillUserName, setSelectedBillUserName] = useState('');
 
@@ -503,13 +500,7 @@ const Billing = () => {
     if (activeTab === 'channel') {
       loadModelList();
     }
-  }, [
-    activeTab,
-    periodType,
-    periodValue,
-    modelPage.page,
-    modelPage.pageSize,
-  ]);
+  }, [activeTab, periodType, periodValue, modelPage.page, modelPage.pageSize]);
 
   useEffect(() => {
     if (activeTab === 'customer') {
@@ -578,33 +569,37 @@ const Billing = () => {
   const loadRevenueData = async () => {
     setRevenueLoading(true);
     try {
-      const [summary, paidSources, giftAuditSummary, giftAudit] = await Promise.all([
-        API.get('/api/finance/revenue/summary', { params: periodParams }),
-        API.get('/api/finance/revenue/paid-sources', {
-          params: {
-            ...periodParams,
-            view: paidSourceView,
-            p: paidSourcesPage.page,
-            page_size: paidSourcesPage.pageSize,
-          },
-        }),
-        API.get('/api/finance/revenue/gift-audit-summary', {
-          params: {
-            ...periodParams,
-            p: giftAuditSummaryPage.page,
-            page_size: giftAuditSummaryPage.pageSize,
-          },
-        }),
-        API.get('/api/finance/revenue/gift-audit', {
-          params: {
-            ...periodParams,
-            p: giftAuditPage.page,
-            page_size: giftAuditPage.pageSize,
-          },
-        }),
-      ]);
+      const [summary, paidSources, giftAuditSummary, giftAudit] =
+        await Promise.all([
+          API.get('/api/finance/revenue/summary', { params: periodParams }),
+          API.get('/api/finance/revenue/paid-sources', {
+            params: {
+              ...periodParams,
+              view: paidSourceView,
+              p: paidSourcesPage.page,
+              page_size: paidSourcesPage.pageSize,
+            },
+          }),
+          API.get('/api/finance/revenue/gift-audit-summary', {
+            params: {
+              ...periodParams,
+              p: giftAuditSummaryPage.page,
+              page_size: giftAuditSummaryPage.pageSize,
+            },
+          }),
+          API.get('/api/finance/revenue/gift-audit', {
+            params: {
+              ...periodParams,
+              p: giftAuditPage.page,
+              page_size: giftAuditPage.pageSize,
+            },
+          }),
+        ]);
       setRevenueSummary(unwrapResponse(summary));
-      setPaidSourcesPage((prev) => ({ ...prev, ...unwrapResponse(paidSources) }));
+      setPaidSourcesPage((prev) => ({
+        ...prev,
+        ...unwrapResponse(paidSources),
+      }));
       setGiftAuditSummaryPage((prev) => ({
         ...prev,
         ...unwrapResponse(giftAuditSummary),
@@ -914,7 +909,8 @@ const Billing = () => {
         return;
       }
       const matchedItem =
-        nextItems.find((item) => item.id === selectedAuditLog?.id) || nextItems[0];
+        nextItems.find((item) => item.id === selectedAuditLog?.id) ||
+        nextItems[0];
       setSelectedAuditLog(matchedItem);
     } catch (error) {
       showError(error.message);
@@ -980,7 +976,8 @@ const Billing = () => {
     {
       title: '对象',
       dataIndex: 'target_name',
-      render: (_, record) => `${record.target_name || '-'} (#${record.target_id})`,
+      render: (_, record) =>
+        `${record.target_name || '-'} (#${record.target_id})`,
     },
     {
       title: '异常值',
@@ -1227,7 +1224,9 @@ const Billing = () => {
       title: '客户',
       render: (_, record) => (
         <div className='text-left'>
-          <div className='font-medium text-blue-600'>{record.username || '-'}</div>
+          <div className='font-medium text-blue-600'>
+            {record.username || '-'}
+          </div>
           <div className='text-xs text-gray-500'>#{record.user_id}</div>
         </div>
       ),
@@ -1298,7 +1297,8 @@ const Billing = () => {
     {
       title: 'COS币变动',
       dataIndex: 'amount_cos',
-      render: (value, record) => formatCOS(getCosValue(value, record?.amount_usd)),
+      render: (value, record) =>
+        formatCOS(getCosValue(value, record?.amount_usd)),
     },
     {
       title: '等价 USD',
@@ -1347,14 +1347,18 @@ const Billing = () => {
       render: (_, record) =>
         record.operator_user_id
           ? `${record.operator_username || record.operator_username_snapshot || '-'} (#${record.operator_user_id})`
-          : record.operator_username || record.operator_username_snapshot || '-',
+          : record.operator_username ||
+            record.operator_username_snapshot ||
+            '-',
     },
     {
       title: '目标对象',
       render: (_, record) => (
         <div>
           <div className='font-medium'>
-            {auditTargetLabelMap[record.target_type] || record.target_type || '-'}
+            {auditTargetLabelMap[record.target_type] ||
+              record.target_type ||
+              '-'}
           </div>
           <div className='text-xs text-slate-400'>
             {record.target_id ? `#${record.target_id}` : '-'}
@@ -1506,11 +1510,7 @@ const Billing = () => {
       <TableCard
         title='关键排行'
         extra={
-          <Tabs
-            type='button'
-            activeKey={rankingView}
-            onChange={setRankingView}
-          >
+          <Tabs type='button' activeKey={rankingView} onChange={setRankingView}>
             <TabPane tab='收入贡献' itemKey='income' />
             <TabPane tab='客户调用' itemKey='usage' />
             <TabPane tab='付费消耗' itemKey='paid_usage' />
@@ -1598,7 +1598,9 @@ const Billing = () => {
             : `${record.created_at}-${record.user_id}-${index}`
         }
         pagination={paidSourcesPage}
-        onPageChange={(page) => setPaidSourcesPage((prev) => ({ ...prev, page }))}
+        onPageChange={(page) =>
+          setPaidSourcesPage((prev) => ({ ...prev, page }))
+        }
         onPageSizeChange={(pageSize) =>
           setPaidSourcesPage((prev) => ({ ...prev, page: 1, pageSize }))
         }
@@ -1734,12 +1736,16 @@ const Billing = () => {
       <Card bordered className='!rounded-2xl' title='客户账单筛选'>
         <div className='flex flex-col gap-3 xl:flex-row xl:items-end'>
           <div className='min-w-[220px]'>
-            <div className='mb-2 text-sm font-medium text-gray-600'>查询月份</div>
+            <div className='mb-2 text-sm font-medium text-gray-600'>
+              查询月份
+            </div>
             <DatePicker
               type='month'
               value={getPickerValue('month', billMonthInput)}
               inputReadOnly
-              onChange={(value) => setBillMonthInput(getPickerNextValue('month', value))}
+              onChange={(value) =>
+                setBillMonthInput(getPickerNextValue('month', value))
+              }
             />
           </div>
           <div className='min-w-[260px] flex-1'>
@@ -1766,7 +1772,9 @@ const Billing = () => {
             </Button>
             <Button
               loading={customerGenerating}
-              disabled={!canWriteFinance || customerLoading || customerDetailLoading}
+              disabled={
+                !canWriteFinance || customerLoading || customerDetailLoading
+              }
               onClick={handleCustomerGenerate}
             >
               生成
@@ -1829,8 +1837,12 @@ const Billing = () => {
             >
               <div className='px-4 py-3'>
                 <div className='font-semibold'>汇总</div>
-                <div className='text-xs' style={{ color: 'var(--semi-color-text-2)' }}>
-                  {formatCount(customerSummaryPage.summary?.customer_count)} 个客户
+                <div
+                  className='text-xs'
+                  style={{ color: 'var(--semi-color-text-2)' }}
+                >
+                  {formatCount(customerSummaryPage.summary?.customer_count)}{' '}
+                  个客户
                 </div>
               </div>
               <div className='px-4 py-3'>
@@ -1961,7 +1973,9 @@ const Billing = () => {
             />
           </div>
           <div>
-            <div className='mb-2 text-sm font-medium text-gray-600'>目标用户</div>
+            <div className='mb-2 text-sm font-medium text-gray-600'>
+              目标用户
+            </div>
             <Input
               value={auditTargetInput}
               onChange={setAuditTargetInput}
@@ -1992,40 +2006,50 @@ const Billing = () => {
 
       <Card
         bordered
-        className='!rounded-[28px] border border-cyan-400/15 bg-[linear-gradient(180deg,rgba(17,26,72,0.94),rgba(8,13,36,0.98))] shadow-[0_26px_70px_rgba(2,6,23,0.48)] backdrop-blur-xl'
-        title={<span className='text-base font-semibold tracking-[0.08em] text-slate-100'>审计详情</span>}
+        className='billing-surface-card billing-audit-detail'
+        title={<span className='billing-card-title'>审计详情</span>}
         bodyStyle={{ padding: 20 }}
       >
         {selectedAuditLog ? (
-          <div className='space-y-4 text-slate-100'>
+          <div className='space-y-4'>
             <div className='grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4'>
-              <div className='rounded-2xl border border-white/10 bg-white/5 px-4 py-3'>
-                <div className='text-xs uppercase tracking-[0.2em] text-cyan-300'>模块</div>
+              <div className='billing-audit-item'>
+                <div className='billing-audit-label'>模块</div>
                 <div className='mt-2 font-medium'>
-                  {auditModuleLabelMap[selectedAuditLog.module] || selectedAuditLog.module || '-'}
+                  {auditModuleLabelMap[selectedAuditLog.module] ||
+                    selectedAuditLog.module ||
+                    '-'}
                 </div>
               </div>
-              <div className='rounded-2xl border border-white/10 bg-white/5 px-4 py-3'>
-                <div className='text-xs uppercase tracking-[0.2em] text-fuchsia-300'>动作</div>
+              <div className='billing-audit-item'>
+                <div className='billing-audit-label'>动作</div>
                 <div className='mt-2 font-medium'>
-                  {auditActionLabelMap[selectedAuditLog.action] || selectedAuditLog.action || '-'}
+                  {auditActionLabelMap[selectedAuditLog.action] ||
+                    selectedAuditLog.action ||
+                    '-'}
                 </div>
               </div>
-              <div className='rounded-2xl border border-white/10 bg-white/5 px-4 py-3'>
-                <div className='text-xs uppercase tracking-[0.2em] text-sky-300'>操作人</div>
+              <div className='billing-audit-item'>
+                <div className='billing-audit-label'>操作人</div>
                 <div className='mt-2 font-medium break-all'>
                   {selectedAuditLog.operator_user_id
                     ? `${selectedAuditLog.operator_username || selectedAuditLog.operator_username_snapshot || '-'} (#${selectedAuditLog.operator_user_id})`
-                    : selectedAuditLog.operator_username || selectedAuditLog.operator_username_snapshot || '-'}
+                    : selectedAuditLog.operator_username ||
+                      selectedAuditLog.operator_username_snapshot ||
+                      '-'}
                 </div>
               </div>
-              <div className='rounded-2xl border border-white/10 bg-white/5 px-4 py-3'>
-                <div className='text-xs uppercase tracking-[0.2em] text-violet-300'>目标</div>
+              <div className='billing-audit-item'>
+                <div className='billing-audit-label'>目标</div>
                 <div className='mt-2 font-medium break-all'>
-                  {auditTargetLabelMap[selectedAuditLog.target_type] || selectedAuditLog.target_type || '-'}
-                  {selectedAuditLog.target_id ? ` #${selectedAuditLog.target_id}` : ''}
+                  {auditTargetLabelMap[selectedAuditLog.target_type] ||
+                    selectedAuditLog.target_type ||
+                    '-'}
+                  {selectedAuditLog.target_id
+                    ? ` #${selectedAuditLog.target_id}`
+                    : ''}
                 </div>
-                <div className='mt-1 text-xs text-slate-400'>
+                <div className='billing-secondary-text mt-1 text-xs'>
                   {selectedAuditLog.target_user_id
                     ? `${selectedAuditLog.target_username || '-'} (#${selectedAuditLog.target_user_id})`
                     : '无目标用户'}
@@ -2033,23 +2057,27 @@ const Billing = () => {
               </div>
             </div>
 
-            <div className='rounded-2xl border border-white/10 bg-white/5 px-4 py-3'>
-              <div className='text-xs uppercase tracking-[0.2em] text-amber-300'>备注</div>
-              <div className='mt-2 break-all text-sm text-slate-200'>
+            <div className='billing-audit-item'>
+              <div className='billing-audit-label'>备注</div>
+              <div className='mt-2 break-all text-sm'>
                 {selectedAuditLog.remark || '-'}
               </div>
             </div>
 
             <div className='grid grid-cols-1 gap-4 xl:grid-cols-2'>
-              <div className='rounded-2xl border border-cyan-400/15 bg-[#09112d]/80 p-4'>
-                <div className='mb-3 text-sm font-semibold text-cyan-300'>Before</div>
-                <pre className='max-h-[420px] overflow-auto whitespace-pre-wrap break-all text-xs leading-6 text-slate-200'>
+              <div className='billing-code-panel p-4'>
+                <div className='billing-code-title mb-3 text-sm font-semibold'>
+                  Before
+                </div>
+                <pre className='max-h-[420px] overflow-auto whitespace-pre-wrap break-all text-xs leading-6'>
                   {formatAuditJSON(selectedAuditLog.before_json)}
                 </pre>
               </div>
-              <div className='rounded-2xl border border-fuchsia-400/15 bg-[#120f34]/80 p-4'>
-                <div className='mb-3 text-sm font-semibold text-fuchsia-300'>After</div>
-                <pre className='max-h-[420px] overflow-auto whitespace-pre-wrap break-all text-xs leading-6 text-slate-200'>
+              <div className='billing-code-panel p-4'>
+                <div className='billing-code-title mb-3 text-sm font-semibold'>
+                  After
+                </div>
+                <pre className='max-h-[420px] overflow-auto whitespace-pre-wrap break-all text-xs leading-6'>
                   {formatAuditJSON(selectedAuditLog.after_json)}
                 </pre>
               </div>
@@ -2063,54 +2091,46 @@ const Billing = () => {
   );
 
   return (
-    <div className='billing-neon relative mt-[60px] overflow-hidden rounded-[36px] bg-[#08112d] px-3 pb-10 pt-3 shadow-[0_30px_120px_rgba(2,6,23,0.65)]'>
-      <div className='pointer-events-none absolute left-0 top-0 h-full w-2 bg-gradient-to-b from-cyan-400 via-sky-400 to-fuchsia-500 opacity-90' />
-      <div className='pointer-events-none absolute inset-0 opacity-90'>
-        <div className='absolute inset-x-20 top-0 h-44 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.28),transparent_65%)]' />
-        <div className='absolute -left-24 top-16 h-72 w-72 rounded-full bg-cyan-400/18 blur-3xl' />
-        <div className='absolute right-8 top-14 h-80 w-80 rounded-full bg-fuchsia-500/14 blur-3xl' />
-        <div className='absolute bottom-12 left-1/4 h-64 w-64 rounded-full bg-blue-500/14 blur-3xl' />
-        <div className='absolute bottom-0 right-1/4 h-56 w-56 rounded-full bg-pink-500/12 blur-3xl' />
-      </div>
+    <div className='billing-neon relative mt-[60px] px-3 pb-10 pt-3'>
       <div className='relative space-y-4'>
         <Card
           bordered
-          className='!rounded-[32px] border border-cyan-400/15 bg-[linear-gradient(135deg,rgba(12,21,69,0.96),rgba(13,30,84,0.92),rgba(32,18,95,0.90))] shadow-[0_28px_90px_rgba(2,6,23,0.55)] backdrop-blur-xl'
+          className='billing-hero-card'
           bodyStyle={{ padding: 24, position: 'relative', overflow: 'hidden' }}
         >
-          <div className='pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.20),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(236,72,153,0.16),transparent_34%)]' />
-          <div className='pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/80 to-transparent' />
           <div className='flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between'>
             <div className='max-w-3xl'>
-              <div className='mt-3 max-w-2xl text-sm leading-6 text-slate-300'>
+              <div className='billing-hero-copy max-w-2xl text-sm leading-6'>
                 在统一指挥台里查看收入、赠送、渠道成本、客户账单与财务审计，快速判断经营状态与异常波动。
               </div>
             </div>
-            <div className='grid grid-cols-2 gap-3 text-sm text-slate-300 sm:grid-cols-4'>
-              <div className='rounded-2xl border border-cyan-300/15 bg-white/5 px-4 py-3 shadow-[0_12px_32px_rgba(8,47,73,0.25)] backdrop-blur-sm'>
-                <div className='text-[11px] uppercase tracking-[0.24em] text-cyan-300'>维度</div>
-                <div className='mt-2 font-semibold text-slate-50'>{periodType === 'year' ? '年度' : '月度'}</div>
+            <div className='grid grid-cols-2 gap-3 text-sm sm:grid-cols-4'>
+              <div className='billing-meta-item'>
+                <div className='billing-meta-label'>维度</div>
+                <div className='billing-meta-value'>
+                  {periodType === 'year' ? '年度' : '月度'}
+                </div>
               </div>
-              <div className='rounded-2xl border border-fuchsia-300/15 bg-white/5 px-4 py-3 shadow-[0_12px_32px_rgba(88,28,135,0.26)] backdrop-blur-sm'>
-                <div className='text-[11px] uppercase tracking-[0.24em] text-fuchsia-300'>窗口</div>
-                <div className='mt-2 font-semibold text-slate-50'>{periodValue}</div>
+              <div className='billing-meta-item'>
+                <div className='billing-meta-label'>窗口</div>
+                <div className='billing-meta-value'>{periodValue}</div>
               </div>
-              <div className='rounded-2xl border border-violet-300/15 bg-white/5 px-4 py-3 shadow-[0_12px_32px_rgba(76,29,149,0.24)] backdrop-blur-sm'>
-                <div className='text-[11px] uppercase tracking-[0.24em] text-violet-300'>面板</div>
-                <div className='mt-2 font-semibold text-slate-50'>
+              <div className='billing-meta-item'>
+                <div className='billing-meta-label'>面板</div>
+                <div className='billing-meta-value'>
                   {activeTabLabelMap[activeTab] || '财务中心'}
                 </div>
               </div>
-              <div className='rounded-2xl border border-sky-300/15 bg-white/5 px-4 py-3 shadow-[0_12px_32px_rgba(14,165,233,0.24)] backdrop-blur-sm'>
-                <div className='text-[11px] uppercase tracking-[0.24em] text-sky-300'>状态</div>
-                <div className='mt-2 font-semibold text-slate-50'>实时同步</div>
+              <div className='billing-meta-item'>
+                <div className='billing-meta-label'>状态</div>
+                <div className='billing-meta-value'>实时同步</div>
               </div>
             </div>
           </div>
         </Card>
         <Card
           bordered
-          className='!rounded-[32px] border border-cyan-400/15 bg-[linear-gradient(180deg,rgba(12,18,52,0.96),rgba(7,11,31,0.98))] shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur-xl'
+          className='billing-control-card'
           headerExtraContent={
             <Tabs type='button' activeKey={activeTab} onChange={setActiveTab}>
               <TabPane tab='营运看板' itemKey='dashboard' />
@@ -2123,7 +2143,7 @@ const Billing = () => {
         >
           <div className='flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between'>
             <div>
-              <div className='text-sm font-medium text-slate-300'>统计维度</div>
+              <div className='billing-control-label'>统计维度</div>
               <Tabs
                 type='button'
                 activeKey={periodType}
@@ -2137,9 +2157,7 @@ const Billing = () => {
             {activeTab !== 'customer' ? (
               <div className='flex flex-col gap-3 md:flex-row md:items-end'>
                 <div>
-                  <div className='mb-2 text-sm font-medium text-slate-300'>
-                    时间
-                  </div>
+                  <div className='billing-control-label mb-2'>时间</div>
                   {periodType === 'year' ? (
                     <Select
                       value={periodValue}
@@ -2163,7 +2181,7 @@ const Billing = () => {
 
                 {activeTab === 'audit' ? null : (
                   <div>
-                    <div className='text-sm font-medium text-slate-300'>单位切换</div>
+                    <div className='billing-control-label'>单位切换</div>
                     {activeTab === 'channel' ? (
                       <Tabs
                         type='button'
@@ -2177,7 +2195,9 @@ const Billing = () => {
                       <Tabs
                         type='button'
                         activeKey={
-                          activeTab === 'dashboard' ? dashboardUnit : revenueUnit
+                          activeTab === 'dashboard'
+                            ? dashboardUnit
+                            : revenueUnit
                         }
                         onChange={(key) => {
                           if (activeTab === 'dashboard') {
@@ -2196,7 +2216,7 @@ const Billing = () => {
               </div>
             ) : (
               <div>
-                <div className='text-sm font-medium text-slate-300'>单位切换</div>
+                <div className='billing-control-label'>单位切换</div>
                 <Tabs
                   type='button'
                   activeKey={customerUnit}
