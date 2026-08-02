@@ -24,8 +24,60 @@ import { AuthRedirect, PermissionRoute, PrivateRoute } from './helpers/auth';
 import { StatusContext } from './context/Status';
 import SetupCheck from './components/layout/SetupCheck';
 
+const CHUNK_LOAD_RELOAD_KEY = 'new-api-chunk-load-reloaded';
+
+const isChunkLoadError = (error) => {
+  const message = `${error?.name || ''} ${error?.message || ''}`;
+  return /ChunkLoadError|Loading chunk \d+ failed|Loading CSS chunk \d+ failed|Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(
+    message,
+  );
+};
+
+const getChunkReloaded = () => {
+  try {
+    return window.sessionStorage.getItem(CHUNK_LOAD_RELOAD_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const setChunkReloaded = () => {
+  try {
+    window.sessionStorage.setItem(CHUNK_LOAD_RELOAD_KEY, '1');
+  } catch {}
+};
+
+const clearChunkReloaded = () => {
+  try {
+    window.sessionStorage.removeItem(CHUNK_LOAD_RELOAD_KEY);
+  } catch {}
+};
+
+const handleLazyLoadError = (error) => {
+  if (typeof window === 'undefined' || !isChunkLoadError(error)) {
+    throw error;
+  }
+
+  const hasReloaded = getChunkReloaded();
+  if (!hasReloaded) {
+    setChunkReloaded();
+    window.location.reload();
+    return new Promise(() => {});
+  }
+
+  clearChunkReloaded();
+  throw error;
+};
+
 const lazyPage = (loader) => {
-  const Component = lazy(loader);
+  const Component = lazy(() =>
+    loader()
+      .then((module) => {
+        clearChunkReloaded();
+        return module;
+      })
+      .catch(handleLazyLoadError),
+  );
 
   return function LazyPage(props) {
     return (
