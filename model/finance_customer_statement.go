@@ -116,7 +116,18 @@ func financeEnsureCustomerStatements(normalizedMonth string, start int64, end in
 	if len(userIDs) == 0 {
 		return userIDs, nil
 	}
+	var existingStatements []CustomerMonthlyStatement
+	if err := DB.Select("user_id").Where("bill_month = ? AND user_id IN ?", normalizedMonth, userIDs).Find(&existingStatements).Error; err != nil {
+		return nil, err
+	}
+	existingUserIDs := make(map[int]struct{}, len(existingStatements))
+	for _, statement := range existingStatements {
+		existingUserIDs[statement.UserId] = struct{}{}
+	}
 	for _, userID := range userIDs {
+		if _, ok := existingUserIDs[userID]; ok {
+			continue
+		}
 		if _, err := GenerateCustomerMonthlyStatement(userID, normalizedMonth, false); err != nil {
 			return nil, err
 		}
@@ -149,6 +160,52 @@ func financeBuildUserUsageFromStatementItems(items []CustomerMonthlyStatementIte
 	return result
 }
 
+func loadFinanceUserUsageFromStatementItems(statementIDs []int) (map[int]*financeUserUsageAggregate, error) {
+	if len(statementIDs) == 0 {
+		return map[int]*financeUserUsageAggregate{}, nil
+	}
+	var rows []financeUserUsageAggregate
+	err := DB.Model(&CustomerMonthlyStatementItem{}).
+		Select(`
+			user_id,
+			SUM(CASE WHEN entry_type = ? THEN 1 ELSE 0 END) AS consume_count,
+			SUM(CASE WHEN entry_type = ? THEN ABS(quota_raw) ELSE 0 END) AS consume_platform,
+			SUM(CASE WHEN entry_type = ? THEN ABS(paid_quota_raw) ELSE 0 END) AS paid_consume_platform,
+			SUM(CASE WHEN entry_type = ? THEN ABS(gift_quota_raw) ELSE 0 END) AS gift_consume_platform,
+			SUM(CASE WHEN entry_type = ? THEN ABS(usd_amount) ELSE 0 END) AS consume_usd,
+			SUM(CASE WHEN entry_type = ? AND quota_per_unit_snapshot > 0 THEN ROUND(ABS(paid_quota_raw) * 1.0 / quota_per_unit_snapshot, 6) ELSE 0 END) AS paid_consume_usd,
+			SUM(CASE WHEN entry_type = ? AND quota_per_unit_snapshot > 0 THEN ROUND(ABS(gift_quota_raw) * 1.0 / quota_per_unit_snapshot, 6) ELSE 0 END) AS gift_consume_usd,
+			MAX(CASE WHEN entry_type = ? THEN occurred_at ELSE 0 END) AS last_occurred_at`,
+			CustomerMonthlyStatementEntryTypeConsume,
+			CustomerMonthlyStatementEntryTypeConsume,
+			CustomerMonthlyStatementEntryTypeConsume,
+			CustomerMonthlyStatementEntryTypeConsume,
+			CustomerMonthlyStatementEntryTypeConsume,
+			CustomerMonthlyStatementEntryTypeConsume,
+			CustomerMonthlyStatementEntryTypeConsume,
+			CustomerMonthlyStatementEntryTypeConsume,
+		).
+		Where("statement_id IN ?", statementIDs).
+		Group("user_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[int]*financeUserUsageAggregate, len(rows))
+	for i := range rows {
+		row := rows[i]
+		if row.ConsumeCount == 0 {
+			continue
+		}
+		row.ConsumeUSD = roundAccountingAmount(row.ConsumeUSD)
+		row.PaidConsumeUSD = roundAccountingAmount(row.PaidConsumeUSD)
+		row.GiftConsumeUSD = roundAccountingAmount(row.GiftConsumeUSD)
+		result[row.UserID] = &row
+	}
+	return result, nil
+}
+
 func financeStatementEntryTypeLabel(entryType string) string {
 	switch strings.TrimSpace(entryType) {
 	case CustomerMonthlyStatementEntryTypeConsume:
@@ -166,7 +223,40 @@ func financeStatementEntryTypeLabel(entryType string) string {
 	}
 }
 
-func ListFinanceCustomerBillSummaryV2(billMonth string, userKeyword string, pageInfo *common.PageInfo) (*common.PageInfo, error) {
+func financeCustomerBillSummaryTotals(items []FinanceCustomerBillSummaryItem) FinanceCustomerBillSummaryTotals {
+	totals := FinanceCustomerBillSummaryTotals{CustomerCount: len(items)}
+	for _, item := range items {
+		totals.CurrentBalanceUSD += item.CurrentBalanceUSD
+		totals.CurrentBalanceCOS += item.CurrentBalanceCOS
+		totals.TotalConsumeUSD += item.TotalConsumeUSD
+		totals.TotalConsumeCOS += item.TotalConsumeCOS
+		totals.PaidConsumeUSD += item.PaidConsumeUSD
+		totals.PaidConsumeCOS += item.PaidConsumeCOS
+		totals.GiftConsumeUSD += item.GiftConsumeUSD
+		totals.GiftConsumeCOS += item.GiftConsumeCOS
+	}
+	totals.CurrentBalanceUSD = roundAccountingAmount(totals.CurrentBalanceUSD)
+	totals.CurrentBalanceCOS = roundAccountingAmount(totals.CurrentBalanceCOS)
+	totals.TotalConsumeUSD = roundAccountingAmount(totals.TotalConsumeUSD)
+	totals.TotalConsumeCOS = roundAccountingAmount(totals.TotalConsumeCOS)
+	totals.PaidConsumeUSD = roundAccountingAmount(totals.PaidConsumeUSD)
+	totals.PaidConsumeCOS = roundAccountingAmount(totals.PaidConsumeCOS)
+	totals.GiftConsumeUSD = roundAccountingAmount(totals.GiftConsumeUSD)
+	totals.GiftConsumeCOS = roundAccountingAmount(totals.GiftConsumeCOS)
+	return totals
+}
+
+func financeCustomerBillSummaryPage(pageInfo *common.PageInfo, items []FinanceCustomerBillSummaryItem) *FinanceCustomerBillSummaryPage {
+	return &FinanceCustomerBillSummaryPage{
+		Page:     pageInfo.GetPage(),
+		PageSize: pageInfo.GetPageSize(),
+		Total:    len(items),
+		Items:    financePageItems(items, pageInfo),
+		Summary:  financeCustomerBillSummaryTotals(items),
+	}
+}
+
+func ListFinanceCustomerBillSummaryV2(billMonth string, userKeyword string, pageInfo *common.PageInfo) (*FinanceCustomerBillSummaryPage, error) {
 	normalizedMonth, start, end, err := ParseCustomerStatementBillMonth(billMonth)
 	if err != nil {
 		return nil, err
@@ -181,9 +271,7 @@ func ListFinanceCustomerBillSummaryV2(billMonth string, userKeyword string, page
 		return nil, err
 	}
 	if restrictToMatchedUsers && len(userIDs) == 0 {
-		pageInfo.SetTotal(0)
-		pageInfo.SetItems([]FinanceCustomerBillSummaryItem{})
-		return pageInfo, nil
+		return financeCustomerBillSummaryPage(pageInfo, []FinanceCustomerBillSummaryItem{}), nil
 	}
 
 	var statements []CustomerMonthlyStatement
@@ -204,11 +292,10 @@ func ListFinanceCustomerBillSummaryV2(billMonth string, userKeyword string, page
 
 	usageMap := map[int]*financeUserUsageAggregate{}
 	if len(statementIDs) > 0 {
-		var statementItems []CustomerMonthlyStatementItem
-		if err := DB.Where("statement_id IN ?", statementIDs).Find(&statementItems).Error; err != nil {
+		usageMap, err = loadFinanceUserUsageFromStatementItems(statementIDs)
+		if err != nil {
 			return nil, err
 		}
-		usageMap = financeBuildUserUsageFromStatementItems(statementItems)
 	}
 
 	userMap, err := financeUserMap(userIDs)
@@ -246,9 +333,7 @@ func ListFinanceCustomerBillSummaryV2(billMonth string, userKeyword string, page
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].TotalConsumeUSD > items[j].TotalConsumeUSD })
-	pageInfo.SetTotal(len(items))
-	pageInfo.SetItems(financePageItems(items, pageInfo))
-	return pageInfo, nil
+	return financeCustomerBillSummaryPage(pageInfo, items), nil
 }
 
 func GetFinanceCustomerBillDetailsV2(billMonth string, userID int) ([]FinanceCustomerBillDetailItem, error) {
@@ -267,34 +352,57 @@ func buildFinanceCustomerBillDetails(statement *CustomerMonthlyStatement) ([]Fin
 
 	items := make([]FinanceCustomerBillDetailItem, 0, len(statementItems))
 	for _, item := range statementItems {
-		tokenDisplay := "-"
-		if item.TokenNameSnapshot != "" || item.TokenMasked != "" {
-			tokenDisplay = fmt.Sprintf("%s / %s", firstNonEmpty(item.TokenNameSnapshot, "-"), firstNonEmpty(item.TokenMasked, "-"))
+		if item == nil {
+			continue
 		}
-		items = append(items, FinanceCustomerBillDetailItem{
-			OccurredAt:     item.OccurredAt,
-			TokenDisplay:   tokenDisplay,
-			EntryType:      item.EntryType,
-			ModelName:      item.ModelName,
-			AmountCOS:      financeCOSAmountFromUSD(item.USDAmount),
-			AmountPlatform: item.QuotaRaw,
-			AmountUSD:      item.USDAmount,
-			ChannelName:    item.ChannelNameSnapshot,
-			RequestID:      item.RequestId,
-			Remark:         item.ContentSummary,
-		})
+		items = append(items, financeCustomerBillDetailFromStatementItem(*item))
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].OccurredAt > items[j].OccurredAt })
 	return items, nil
 }
 
+func financeCustomerBillDetailFromStatementItem(item CustomerMonthlyStatementItem) FinanceCustomerBillDetailItem {
+	tokenDisplay := "-"
+	if item.TokenNameSnapshot != "" || item.TokenMasked != "" {
+		tokenDisplay = fmt.Sprintf("%s / %s", firstNonEmpty(item.TokenNameSnapshot, "-"), firstNonEmpty(item.TokenMasked, "-"))
+	}
+	return FinanceCustomerBillDetailItem{
+		OccurredAt:     item.OccurredAt,
+		TokenDisplay:   tokenDisplay,
+		EntryType:      item.EntryType,
+		ModelName:      item.ModelName,
+		AmountCOS:      financeCOSAmountFromUSD(item.USDAmount),
+		AmountPlatform: item.QuotaRaw,
+		AmountUSD:      item.USDAmount,
+		ChannelName:    item.ChannelNameSnapshot,
+		RequestID:      item.RequestId,
+		Remark:         item.ContentSummary,
+	}
+}
+
 func ListFinanceCustomerBillDetailsV2(billMonth string, userID int, pageInfo *common.PageInfo) (*common.PageInfo, error) {
-	items, err := GetFinanceCustomerBillDetailsV2(billMonth, userID)
+	statement, err := GenerateCustomerMonthlyStatement(userID, billMonth, false)
 	if err != nil {
 		return nil, err
 	}
-	pageInfo.SetTotal(len(items))
-	pageInfo.SetItems(financePageItems(items, pageInfo))
+	var total int64
+	if err := DB.Model(&CustomerMonthlyStatementItem{}).Where("statement_id = ?", statement.Id).Count(&total).Error; err != nil {
+		return nil, err
+	}
+	var statementItems []CustomerMonthlyStatementItem
+	if err := DB.Where("statement_id = ?", statement.Id).
+		Order("occurred_at desc, id desc").
+		Offset(pageInfo.GetStartIdx()).
+		Limit(pageInfo.GetPageSize()).
+		Find(&statementItems).Error; err != nil {
+		return nil, err
+	}
+	items := make([]FinanceCustomerBillDetailItem, 0, len(statementItems))
+	for _, item := range statementItems {
+		items = append(items, financeCustomerBillDetailFromStatementItem(item))
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(items)
 	return pageInfo, nil
 }
 

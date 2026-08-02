@@ -38,6 +38,7 @@ import {
   Download,
   LayoutDashboard,
   Receipt,
+  Search,
   Shield,
   Users,
   WalletCards,
@@ -303,6 +304,8 @@ const TableCard = ({
   pagination,
   onPageChange,
   onPageSizeChange,
+  onRow,
+  footer,
 }) => (
   <Card
     bordered
@@ -318,8 +321,12 @@ const TableCard = ({
       dataSource={dataSource}
       loading={loading}
       rowKey={rowKey}
+      onRow={onRow}
       pagination={false}
     />
+    {footer ? (
+      <div style={{ borderTop: '1px solid var(--semi-color-border)' }}>{footer}</div>
+    ) : null}
     {pagination && pagination.total > 0 ? (
       <div className='flex justify-end border-t border-white/10 px-4 py-3'>
         <Pagination
@@ -418,6 +425,7 @@ const Billing = () => {
   const modelListRequestRef = useRef(0);
   const customerSummaryRequestRef = useRef(0);
   const customerDetailsRequestRef = useRef(0);
+  const customerDetailRequestInFlightRef = useRef(false);
 
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditModuleInput, setAuditModuleInput] = useState('');
@@ -735,7 +743,15 @@ const Billing = () => {
     }
   };
 
-  const loadCustomerDetails = async (userId) => {
+  const loadCustomerDetails = async (
+    userId,
+    page = customerDetailsPage.page,
+    pageSize = customerDetailsPage.pageSize,
+  ) => {
+    if (customerDetailRequestInFlightRef.current) {
+      return false;
+    }
+    customerDetailRequestInFlightRef.current = true;
     const requestId = ++customerDetailsRequestRef.current;
     setCustomerDetailLoading(true);
     try {
@@ -743,25 +759,65 @@ const Billing = () => {
         params: {
           bill_month: billQuery.billMonth,
           user_id: userId,
-          p: customerDetailsPage.page,
-          page_size: customerDetailsPage.pageSize,
+          p: page,
+          page_size: pageSize,
         },
       });
       if (requestId === customerDetailsRequestRef.current) {
         setCustomerDetailsPage((prev) => ({
           ...prev,
           ...unwrapResponse(response),
+          page,
+          pageSize,
         }));
       }
+      return true;
     } catch (error) {
       if (requestId === customerDetailsRequestRef.current) {
         showError(error.message);
       }
+      return false;
     } finally {
-      if (requestId === customerDetailsRequestRef.current) {
-        setCustomerDetailLoading(false);
-      }
+      customerDetailRequestInFlightRef.current = false;
+      setCustomerDetailLoading(false);
     }
+  };
+
+  const handleCustomerSelect = (record) => {
+    if (customerDetailRequestInFlightRef.current) {
+      return;
+    }
+    setSelectedBillUserId(record.user_id);
+    setSelectedBillUserName(record.username || '');
+    setCustomerDetailsPage((prev) => ({
+      ...prev,
+      page: 1,
+      total: 0,
+      items: [],
+    }));
+    void loadCustomerDetails(record.user_id, 1, customerDetailsPage.pageSize);
+  };
+
+  const handleCustomerQuery = () => {
+    if (customerLoading || customerDetailRequestInFlightRef.current) {
+      return;
+    }
+    const nextQuery = {
+      billMonth: billMonthInput,
+      userKeyword: billKeywordInput.trim(),
+    };
+    customerDetailsRequestRef.current += 1;
+    setSelectedBillUserId(null);
+    setSelectedBillUserName('');
+    setCustomerDetailsPage((prev) => ({
+      ...prev,
+      page: 1,
+      total: 0,
+      items: [],
+    }));
+    setCustomerSummaryPage((prev) => ({ ...prev, page: 1 }));
+    setBillQuery(nextQuery);
+    setCustomerRefreshVersion((prev) => prev + 1);
   };
 
   const handleCustomerGenerate = async () => {
@@ -1170,26 +1226,10 @@ const Billing = () => {
     {
       title: '客户',
       render: (_, record) => (
-        <button
-          className='text-left'
-          onClick={() => {
-            if (record.user_id === selectedBillUserId) {
-              setSelectedBillUserName(record.username || '');
-              return;
-            }
-            setSelectedBillUserId(record.user_id);
-            setSelectedBillUserName(record.username || '');
-            setCustomerDetailsPage((prev) => ({
-              ...prev,
-              page: 1,
-              total: 0,
-              items: [],
-            }));
-          }}
-        >
+        <div className='text-left'>
           <div className='font-medium text-blue-600'>{record.username || '-'}</div>
           <div className='text-xs text-gray-500'>#{record.user_id}</div>
-        </button>
+        </div>
       ),
     },
     {
@@ -1694,7 +1734,7 @@ const Billing = () => {
       <Card bordered className='!rounded-2xl' title='客户账单筛选'>
         <div className='flex flex-col gap-3 xl:flex-row xl:items-end'>
           <div className='min-w-[220px]'>
-            <div className='mb-2 text-sm font-medium text-gray-600'>月份</div>
+            <div className='mb-2 text-sm font-medium text-gray-600'>查询月份</div>
             <DatePicker
               type='month'
               value={getPickerValue('month', billMonthInput)}
@@ -1704,20 +1744,29 @@ const Billing = () => {
           </div>
           <div className='min-w-[260px] flex-1'>
             <div className='mb-2 text-sm font-medium text-gray-600'>
-              用户 ID / 用户名
+              客户 ID / 用户名（可选）
             </div>
             <Input
               value={billKeywordInput}
               onChange={setBillKeywordInput}
-              placeholder='可选输入'
+              onEnterPress={handleCustomerQuery}
+              placeholder='留空查询所有客户'
             />
           </div>
           <div className='flex gap-2'>
             <Button
+              icon={<Search size={14} />}
               theme='solid'
               type='primary'
+              loading={customerLoading}
+              disabled={customerDetailLoading}
+              onClick={handleCustomerQuery}
+            >
+              查询
+            </Button>
+            <Button
               loading={customerGenerating}
-              disabled={!canWriteFinance}
+              disabled={!canWriteFinance || customerLoading || customerDetailLoading}
               onClick={handleCustomerGenerate}
             >
               生成
@@ -1746,6 +1795,107 @@ const Billing = () => {
         onPageSizeChange={(pageSize) =>
           setCustomerSummaryPage((prev) => ({ ...prev, page: 1, pageSize }))
         }
+        onRow={(record) => ({
+          onClick: () => handleCustomerSelect(record),
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleCustomerSelect(record);
+            }
+          },
+          tabIndex: customerDetailLoading ? -1 : 0,
+          'aria-disabled': customerDetailLoading,
+          style: {
+            cursor: customerDetailLoading ? 'wait' : 'pointer',
+            pointerEvents: customerDetailLoading ? 'none' : undefined,
+            background:
+              record.user_id === selectedBillUserId
+                ? 'rgba(59, 130, 246, 0.14)'
+                : undefined,
+            opacity:
+              customerDetailLoading && record.user_id !== selectedBillUserId
+                ? 0.65
+                : 1,
+          },
+        })}
+        footer={
+          customerSummaryPage.total > 0 ? (
+            <div
+              className='grid grid-cols-2 md:grid-cols-5'
+              style={{
+                background: 'var(--semi-color-fill-0)',
+                color: 'var(--semi-color-text-0)',
+              }}
+            >
+              <div className='px-4 py-3'>
+                <div className='font-semibold'>汇总</div>
+                <div className='text-xs' style={{ color: 'var(--semi-color-text-2)' }}>
+                  {formatCount(customerSummaryPage.summary?.customer_count)} 个客户
+                </div>
+              </div>
+              <div className='px-4 py-3'>
+                <div
+                  className='text-xs md:hidden'
+                  style={{ color: 'var(--semi-color-text-2)' }}
+                >
+                  账户余额
+                </div>
+                <div className='font-semibold'>
+                  {getAmountText(
+                    customerUnit,
+                    customerSummaryPage.summary?.current_balance_usd,
+                    customerSummaryPage.summary?.current_balance_cos,
+                  )}
+                </div>
+              </div>
+              <div className='px-4 py-3'>
+                <div
+                  className='text-xs md:hidden'
+                  style={{ color: 'var(--semi-color-text-2)' }}
+                >
+                  总消耗额
+                </div>
+                <div className='font-semibold'>
+                  {getAmountText(
+                    customerUnit,
+                    customerSummaryPage.summary?.total_consume_usd,
+                    customerSummaryPage.summary?.total_consume_cos,
+                  )}
+                </div>
+              </div>
+              <div className='px-4 py-3'>
+                <div
+                  className='text-xs md:hidden'
+                  style={{ color: 'var(--semi-color-text-2)' }}
+                >
+                  付费消耗
+                </div>
+                <div className='font-semibold'>
+                  {getAmountText(
+                    customerUnit,
+                    customerSummaryPage.summary?.paid_consume_usd,
+                    customerSummaryPage.summary?.paid_consume_cos,
+                  )}
+                </div>
+              </div>
+              <div className='px-4 py-3'>
+                <div
+                  className='text-xs md:hidden'
+                  style={{ color: 'var(--semi-color-text-2)' }}
+                >
+                  赠送消耗
+                </div>
+                <div className='font-semibold'>
+                  {getAmountText(
+                    customerUnit,
+                    customerSummaryPage.summary?.gift_consume_usd,
+                    customerSummaryPage.summary?.gift_consume_cos,
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null
+        }
       />
 
       <TableCard
@@ -1757,12 +1907,16 @@ const Billing = () => {
           `${record.occurred_at}-${record.request_id}-${index}`
         }
         pagination={selectedBillUserId ? customerDetailsPage : null}
-        onPageChange={(page) =>
-          setCustomerDetailsPage((prev) => ({ ...prev, page }))
-        }
-        onPageSizeChange={(pageSize) =>
-          setCustomerDetailsPage((prev) => ({ ...prev, page: 1, pageSize }))
-        }
+        onPageChange={(page) => {
+          if (!customerDetailRequestInFlightRef.current) {
+            setCustomerDetailsPage((prev) => ({ ...prev, page }));
+          }
+        }}
+        onPageSizeChange={(pageSize) => {
+          if (!customerDetailRequestInFlightRef.current) {
+            setCustomerDetailsPage((prev) => ({ ...prev, page: 1, pageSize }));
+          }
+        }}
       />
     </div>
   );

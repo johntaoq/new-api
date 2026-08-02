@@ -203,6 +203,26 @@ type FinanceCustomerBillSummaryItem struct {
 	GiftConsumePlatform    int     `json:"-"`
 }
 
+type FinanceCustomerBillSummaryTotals struct {
+	CustomerCount     int     `json:"customer_count"`
+	CurrentBalanceUSD float64 `json:"current_balance_usd"`
+	CurrentBalanceCOS float64 `json:"current_balance_cos"`
+	TotalConsumeUSD   float64 `json:"total_consume_usd"`
+	TotalConsumeCOS   float64 `json:"total_consume_cos"`
+	PaidConsumeUSD    float64 `json:"paid_consume_usd"`
+	PaidConsumeCOS    float64 `json:"paid_consume_cos"`
+	GiftConsumeUSD    float64 `json:"gift_consume_usd"`
+	GiftConsumeCOS    float64 `json:"gift_consume_cos"`
+}
+
+type FinanceCustomerBillSummaryPage struct {
+	Page     int                              `json:"page"`
+	PageSize int                              `json:"page_size"`
+	Total    int                              `json:"total"`
+	Items    []FinanceCustomerBillSummaryItem `json:"items"`
+	Summary  FinanceCustomerBillSummaryTotals `json:"summary"`
+}
+
 type FinanceCustomerBillDetailItem struct {
 	OccurredAt     int64   `json:"occurred_at"`
 	TokenDisplay   string  `json:"token_display"`
@@ -315,6 +335,12 @@ func financeSourceLabel(sourceType string) string {
 		return "活动赠送"
 	case QuotaFundingSourceCompensation:
 		return "补偿"
+	case QuotaFundingSourceRefund:
+		return "退费"
+	case QuotaFundingSourceManualTopUp:
+		return "充值"
+	case QuotaFundingSourceAccountClosure:
+		return "销户"
 	case QuotaFundingSourceSystemAdjust:
 		return "系统修正"
 	case QuotaFundingSourceCheckin:
@@ -476,6 +502,48 @@ func financeBuildUserUsageFromLedgers(ledgers []ChannelCostLedger) map[int]*fina
 	return result
 }
 
+func loadFinanceUserUsage(start int64, end int64) (map[int]*financeUserUsageAggregate, error) {
+	var rows []financeUserUsageAggregate
+	err := DB.Model(&ChannelCostLedger{}).
+		Select(`
+			user_id,
+			SUM(CASE WHEN entry_type = ? THEN -actual_quota ELSE actual_quota END) AS consume_platform,
+			SUM(CASE WHEN entry_type = ? THEN -paid_quota_used ELSE paid_quota_used END) AS paid_consume_platform,
+			SUM(CASE WHEN entry_type = ? THEN -gift_quota_used ELSE gift_quota_used END) AS gift_consume_platform,
+			SUM(CASE WHEN entry_type = ? THEN -internal_equivalent_usd ELSE internal_equivalent_usd END) AS consume_usd,
+			SUM(CASE WHEN entry_type = ? THEN 1 ELSE 0 END) AS consume_count,
+			MAX(occurred_at) AS last_occurred_at`,
+			ChannelCostEntryTypeRefund,
+			ChannelCostEntryTypeRefund,
+			ChannelCostEntryTypeRefund,
+			ChannelCostEntryTypeRefund,
+			ChannelCostEntryTypeConsume,
+		).
+		Where("occurred_at >= ? AND occurred_at <= ?", start, end).
+		Group("user_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		logs, err := loadLegacyBillingLogs(start, end)
+		if err != nil {
+			return nil, err
+		}
+		return financeBuildUserUsageFromLogs(logs), nil
+	}
+
+	result := make(map[int]*financeUserUsageAggregate, len(rows))
+	for i := range rows {
+		row := rows[i]
+		row.ConsumeUSD = roundAccountingAmount(row.ConsumeUSD)
+		row.PaidConsumeUSD = roundAccountingAmount(quotaToUSDWithSnapshot(row.PaidConsumePlatform, common.QuotaPerUnit))
+		row.GiftConsumeUSD = roundAccountingAmount(quotaToUSDWithSnapshot(row.GiftConsumePlatform, common.QuotaPerUnit))
+		result[row.UserID] = &row
+	}
+	return result, nil
+}
+
 func financeBuildUserUsageFromLogs(logs []*Log) map[int]*financeUserUsageAggregate {
 	result := make(map[int]*financeUserUsageAggregate)
 	for _, logRecord := range logs {
@@ -608,12 +676,37 @@ func financeChartPoints(values map[string]float64) []FinanceChannelCostChartPoin
 }
 
 func loadFinanceChannelItems(periodRange financePeriodRange) ([]financeChannelAggregate, error) {
-	var ledgers []ChannelCostLedger
-	if err := DB.Where("occurred_at >= ? AND occurred_at <= ?", periodRange.Start, periodRange.End).Find(&ledgers).Error; err != nil {
+	var items []financeChannelAggregate
+	if err := DB.Model(&ChannelCostLedger{}).
+		Select(`
+			channel_id,
+			channel_name_snapshot AS channel_name,
+			provider_snapshot,
+			origin_model_name AS model_name,
+			SUM(CASE WHEN entry_type = ? THEN -prompt_tokens ELSE prompt_tokens END) AS prompt_tokens,
+			SUM(CASE WHEN entry_type = ? THEN -completion_tokens ELSE completion_tokens END) AS completion_tokens,
+			SUM(CASE WHEN entry_type = ? THEN -cache_tokens ELSE cache_tokens END) AS cache_tokens,
+			SUM(CASE WHEN entry_type = ? THEN -total_tokens ELSE total_tokens END) AS total_tokens,
+			SUM(CASE WHEN entry_type = ? THEN -recognized_revenue_usd ELSE recognized_revenue_usd END) AS revenue_usd,
+			SUM(CASE WHEN entry_type = ? THEN -estimated_cost_usd ELSE estimated_cost_usd END) AS cost_usd`,
+			ChannelCostEntryTypeRefund,
+			ChannelCostEntryTypeRefund,
+			ChannelCostEntryTypeRefund,
+			ChannelCostEntryTypeRefund,
+			ChannelCostEntryTypeRefund,
+			ChannelCostEntryTypeRefund,
+		).
+		Where("occurred_at >= ? AND occurred_at <= ?", periodRange.Start, periodRange.End).
+		Group("channel_id, channel_name_snapshot, provider_snapshot, origin_model_name").
+		Scan(&items).Error; err != nil {
 		return nil, err
 	}
-	if len(ledgers) > 0 {
-		return financeBuildChannelAggregatesFromLedgers(ledgers), nil
+	if len(items) > 0 {
+		for i := range items {
+			items[i].RevenueUSD = roundAccountingAmount(items[i].RevenueUSD)
+			items[i].CostUSD = roundAccountingAmount(items[i].CostUSD)
+		}
+		return items, nil
 	}
 	logs, err := loadLegacyBillingLogs(periodRange.Start, periodRange.End)
 	if err != nil {
@@ -640,33 +733,13 @@ func BuildFinanceDashboardSummary(periodType string, period string) (*FinanceDas
 		return nil, err
 	}
 
-	var ledgers []ChannelCostLedger
-	if err := DB.Where("occurred_at >= ? AND occurred_at <= ?", periodRange.Start, periodRange.End).
-		Order("occurred_at asc, id asc").
-		Find(&ledgers).Error; err != nil {
+	activeUsage, err := loadFinanceUserUsage(periodRange.Start, periodRange.End)
+	if err != nil {
 		return nil, err
 	}
-	var previousLedgers []ChannelCostLedger
-	if err := DB.Where("occurred_at >= ? AND occurred_at <= ?", periodRange.PreviousStart, periodRange.PreviousEnd).
-		Find(&previousLedgers).Error; err != nil {
+	previousUsage, err := loadFinanceUserUsage(periodRange.PreviousStart, periodRange.PreviousEnd)
+	if err != nil {
 		return nil, err
-	}
-
-	activeUsage := financeBuildUserUsageFromLedgers(ledgers)
-	if len(ledgers) == 0 {
-		legacyLogs, err := loadLegacyBillingLogs(periodRange.Start, periodRange.End)
-		if err != nil {
-			return nil, err
-		}
-		activeUsage = financeBuildUserUsageFromLogs(legacyLogs)
-	}
-	previousUsage := financeBuildUserUsageFromLedgers(previousLedgers)
-	if len(previousLedgers) == 0 {
-		legacyLogs, err := loadLegacyBillingLogs(periodRange.PreviousStart, periodRange.PreviousEnd)
-		if err != nil {
-			return nil, err
-		}
-		previousUsage = financeBuildUserUsageFromLogs(legacyLogs)
 	}
 
 	var allUsers []User
@@ -770,11 +843,10 @@ func ListFinanceDashboardTodos(periodType string, period string, limit int) ([]F
 	if err := DB.Unscoped().Where("deleted_at IS NULL").Find(&users).Error; err != nil {
 		return nil, err
 	}
-	var ledgers []ChannelCostLedger
-	if err := DB.Where("occurred_at >= ? AND occurred_at <= ?", periodRange.Start, periodRange.End).Find(&ledgers).Error; err != nil {
+	usageMap, err := loadFinanceUserUsage(periodRange.Start, periodRange.End)
+	if err != nil {
 		return nil, err
 	}
-	usageMap := financeBuildUserUsageFromLedgers(ledgers)
 	activeSet := make(map[int]struct{}, len(usageMap))
 	for userID := range usageMap {
 		activeSet[userID] = struct{}{}
@@ -909,17 +981,9 @@ func ListFinanceDashboardRankings(periodType string, period string, view string,
 		}
 		return items, nil
 	default:
-		var ledgers []ChannelCostLedger
-		if err := DB.Where("occurred_at >= ? AND occurred_at <= ?", periodRange.Start, periodRange.End).Find(&ledgers).Error; err != nil {
+		usageMap, err := loadFinanceUserUsage(periodRange.Start, periodRange.End)
+		if err != nil {
 			return nil, err
-		}
-		usageMap := financeBuildUserUsageFromLedgers(ledgers)
-		if len(ledgers) == 0 {
-			logs, err := loadLegacyBillingLogs(periodRange.Start, periodRange.End)
-			if err != nil {
-				return nil, err
-			}
-			usageMap = financeBuildUserUsageFromLogs(logs)
 		}
 		userIDs := make([]int, 0, len(usageMap))
 		for userID := range usageMap {

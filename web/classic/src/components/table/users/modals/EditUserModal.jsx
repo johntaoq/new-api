@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   API,
@@ -57,6 +57,7 @@ import {
   IconUserGroup,
 } from '@douyinfe/semi-icons';
 import UserBindingManagementModal from './UserBindingManagementModal';
+import { StatusContext } from '../../../../context/Status';
 
 const { Text, Title } = Typography;
 
@@ -85,7 +86,11 @@ class AdjustmentPanelBoundary extends React.Component {
           <Space vertical align='start' spacing='tight'>
             <Text strong>{this.props.title}</Text>
             <Text type='danger'>{this.state.errorMessage}</Text>
-            <Button htmlType='button' theme='light' onClick={this.props.onReset}>
+            <Button
+              htmlType='button'
+              theme='light'
+              onClick={this.props.onReset}
+            >
               {this.props.resetLabel}
             </Button>
           </Space>
@@ -119,6 +124,7 @@ const getInitValues = () => ({
 const EditUserModal = (props) => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const [statusState] = useContext(StatusContext);
   const formApiRef = useRef(null);
   const pendingAdjustmentIdRef = useRef(0);
 
@@ -138,7 +144,11 @@ const EditUserModal = (props) => {
   const [adjustmentEditingId, setAdjustmentEditingId] = useState(null);
   const [adjustmentFundingType, setAdjustmentFundingType] = useState('gift');
   const [adjustmentAmountUSD, setAdjustmentAmountUSD] = useState('');
-  const [adjustmentSourceType, setAdjustmentSourceType] = useState('admin_grant');
+  const [paidAdjustmentCurrency, setPaidAdjustmentCurrency] = useState('CNY');
+  const [paidAdjustmentInputAmount, setPaidAdjustmentInputAmount] =
+    useState('');
+  const [adjustmentSourceType, setAdjustmentSourceType] =
+    useState('admin_grant');
   const [adjustmentRemark, setAdjustmentRemark] = useState('');
   const [adjustmentRevenueUSD, setAdjustmentRevenueUSD] = useState('');
   const [balanceSnapshot, setBalanceSnapshot] = useState({
@@ -146,6 +156,16 @@ const EditUserModal = (props) => {
     paid_quota: 0,
     gift_quota: 0,
   });
+
+  const paidAdjustmentReasonOptions = useMemo(
+    () => [
+      { label: t('补偿'), value: 'compensation' },
+      { label: t('退费'), value: 'refund' },
+      { label: t('充值'), value: 'manual_topup' },
+      { label: t('销户'), value: 'account_closure' },
+    ],
+    [t],
+  );
 
   const giftSourceOptions = useMemo(() => {
     const options = [
@@ -159,6 +179,29 @@ const EditUserModal = (props) => {
     }
     return options;
   }, [t]);
+
+  const usdCnyExchangeRate = Number(
+    statusState?.status?.usd_exchange_rate || 0,
+  );
+
+  const paidAdjustmentAmountUSD = useMemo(() => {
+    const inputAmount = Number(paidAdjustmentInputAmount || 0);
+    if (!Number.isFinite(inputAmount) || inputAmount === 0) {
+      return paidAdjustmentInputAmount === '' ? '' : '0';
+    }
+    if (paidAdjustmentCurrency === 'CNY') {
+      if (!Number.isFinite(usdCnyExchangeRate) || usdCnyExchangeRate <= 0) {
+        return '';
+      }
+      return `${Number((inputAmount / usdCnyExchangeRate).toFixed(6))}`;
+    }
+    return `${inputAmount}`;
+  }, [paidAdjustmentCurrency, paidAdjustmentInputAmount, usdCnyExchangeRate]);
+
+  const effectiveAdjustmentAmountUSD =
+    adjustmentFundingType === 'paid'
+      ? paidAdjustmentAmountUSD
+      : adjustmentAmountUSD;
 
   const quotaToUSD = (quota) => {
     const quotaPerUnit = getQuotaPerUnit();
@@ -262,11 +305,11 @@ const EditUserModal = (props) => {
     setAdjustmentEditingId(null);
     setAdjustmentFundingType(fundingType);
     setAdjustmentAmountUSD('');
+    setPaidAdjustmentCurrency(fundingType === 'paid' ? 'CNY' : 'USD');
+    setPaidAdjustmentInputAmount('');
     setAdjustmentRemark('');
     setAdjustmentRevenueUSD('');
-    setAdjustmentSourceType(
-      fundingType === 'paid' ? 'system_adjustment' : 'admin_grant',
-    );
+    setAdjustmentSourceType(fundingType === 'paid' ? '' : 'admin_grant');
   };
 
   const openAdjustmentModal = (fundingType) => {
@@ -300,9 +343,29 @@ const EditUserModal = (props) => {
   };
 
   const submitAdjustment = () => {
-    const deltaUSD = Number(adjustmentAmountUSD || 0);
+    if (adjustmentFundingType === 'paid' && !adjustmentSourceType) {
+      showError(t('请选择调整原因'));
+      return;
+    }
+
+    if (
+      adjustmentFundingType === 'paid' &&
+      paidAdjustmentCurrency === 'CNY' &&
+      (!Number.isFinite(usdCnyExchangeRate) || usdCnyExchangeRate <= 0)
+    ) {
+      showError(t('系统 USD/CNY 汇率无效，请先检查系统设置'));
+      return;
+    }
+
+    const deltaUSD = Number(effectiveAdjustmentAmountUSD || 0);
     if (!Number.isFinite(deltaUSD) || deltaUSD === 0) {
-      showError(t('请输入非 0 的 USD 金额'));
+      showError(
+        t(
+          adjustmentFundingType === 'paid'
+            ? '请输入非 0 的调整金额'
+            : '请输入非 0 的 USD 金额',
+        ),
+      );
       return;
     }
 
@@ -317,18 +380,23 @@ const EditUserModal = (props) => {
         adjustmentEditingId ||
         `pending-${Date.now()}-${pendingAdjustmentIdRef.current++}`,
       fundingType: adjustmentFundingType,
-      sourceType:
-        adjustmentFundingType === 'paid'
-          ? 'system_adjustment'
-          : adjustmentSourceType,
+      sourceType: adjustmentSourceType,
       remark: adjustmentRemark,
       deltaUSD,
       deltaQuota,
+      inputCurrency:
+        adjustmentFundingType === 'paid' ? paidAdjustmentCurrency : 'USD',
+      inputAmount:
+        adjustmentFundingType === 'paid'
+          ? Number(paidAdjustmentInputAmount || 0)
+          : deltaUSD,
       revenueUSD:
         adjustmentFundingType === 'paid'
           ? Number(
               adjustmentRevenueUSD === '' || adjustmentRevenueUSD == null
-                ? deltaUSD
+                ? adjustmentSourceType === 'manual_topup' && deltaUSD > 0
+                  ? deltaUSD
+                  : 0
                 : adjustmentRevenueUSD,
             )
           : 0,
@@ -353,7 +421,20 @@ const EditUserModal = (props) => {
     setAdjustmentEditingId(adjustment.id);
     setAdjustmentFundingType(adjustment.fundingType);
     setAdjustmentAmountUSD(`${adjustment.deltaUSD ?? ''}`);
-    setAdjustmentSourceType(adjustment.sourceType || 'admin_grant');
+    setPaidAdjustmentCurrency(
+      adjustment.fundingType === 'paid'
+        ? adjustment.inputCurrency || 'USD'
+        : 'USD',
+    );
+    setPaidAdjustmentInputAmount(
+      adjustment.fundingType === 'paid'
+        ? `${adjustment.inputAmount ?? adjustment.deltaUSD ?? ''}`
+        : '',
+    );
+    setAdjustmentSourceType(
+      adjustment.sourceType ||
+        (adjustment.fundingType === 'paid' ? '' : 'admin_grant'),
+    );
     setAdjustmentRemark(adjustment.remark || '');
     setAdjustmentRevenueUSD(
       adjustment.fundingType === 'paid' ? `${adjustment.revenueUSD ?? ''}` : '',
@@ -454,15 +535,29 @@ const EditUserModal = (props) => {
     adjustmentFundingType,
     adjustmentEditingId,
   );
-  const currentAdjustmentDeltaQuota = usdToQuota(adjustmentAmountUSD);
+  const currentAdjustmentDeltaQuota = usdToQuota(effectiveAdjustmentAmountUSD);
   const currentAdjustmentRevenueUSD =
     adjustmentFundingType === 'paid'
       ? Number(
           adjustmentRevenueUSD === '' || adjustmentRevenueUSD == null
-            ? adjustmentAmountUSD || 0
+            ? adjustmentSourceType === 'manual_topup' &&
+              Number(effectiveAdjustmentAmountUSD || 0) > 0
+              ? effectiveAdjustmentAmountUSD
+              : 0
             : adjustmentRevenueUSD,
         )
       : 0;
+
+  const getAdjustmentSourceLabel = (adjustment) => {
+    const options =
+      adjustment.fundingType === 'paid'
+        ? paidAdjustmentReasonOptions
+        : giftSourceOptions;
+    return (
+      options.find((option) => option.value === adjustment.sourceType)?.label ||
+      adjustment.sourceType
+    );
+  };
 
   const buildPendingAdjustmentPreview = (adjustment) => {
     let baseQuota =
@@ -649,13 +744,21 @@ const EditUserModal = (props) => {
               {userId ? (
                 <Card className='!rounded-2xl shadow-sm border-0'>
                   <div className='flex items-center mb-2'>
-                    <Avatar size='small' color='green' className='mr-2 shadow-md'>
+                    <Avatar
+                      size='small'
+                      color='green'
+                      className='mr-2 shadow-md'
+                    >
                       <IconUserGroup size={16} />
                     </Avatar>
                     <div>
-                      <Text className='text-lg font-medium'>{t('权限与账务')}</Text>
+                      <Text className='text-lg font-medium'>
+                        {t('权限与账务')}
+                      </Text>
                       <div className='text-xs text-gray-600'>
-                        {t('这里只展示用户可理解的余额，不直接暴露内部记账单位')}
+                        {t(
+                          '这里只展示用户可理解的余额，不直接暴露内部记账单位',
+                        )}
                       </div>
                     </div>
                   </div>
@@ -727,7 +830,9 @@ const EditUserModal = (props) => {
                         ) : null}
                         <Text type='secondary'>
                           {canManageSystem
-                            ? t('管理员输入 USD，系统展示对应余额值，提交前可先 review')
+                            ? t(
+                                '管理员可选择 CNY 或 USD，系统换算并展示对应余额值，提交前可先 review',
+                              )
                             : t('财务角色仅可调整赠送余额，输入口径统一为 USD')}
                         </Text>
                       </div>
@@ -746,10 +851,14 @@ const EditUserModal = (props) => {
                                   {t('待提交账务修改')}
                                 </Text>
                                 <div className='text-xs text-gray-500'>
-                                  {t('管理员可以先 review 调账内容，再统一提交')}
+                                  {t(
+                                    '管理员可以先 review 调账内容，再统一提交',
+                                  )}
                                 </div>
                               </div>
-                              <Tag color='orange'>{pendingAdjustments.length}</Tag>
+                              <Tag color='orange'>
+                                {pendingAdjustments.length}
+                              </Tag>
                             </div>
 
                             {pendingAdjustments.map((adjustment) => {
@@ -762,7 +871,11 @@ const EditUserModal = (props) => {
                                   bodyStyle={{ padding: 16 }}
                                 >
                                   <div className='flex items-start justify-between gap-3'>
-                                    <Space vertical align='start' spacing='tight'>
+                                    <Space
+                                      vertical
+                                      align='start'
+                                      spacing='tight'
+                                    >
                                       <Space wrap>
                                         <Tag
                                           color={
@@ -775,7 +888,9 @@ const EditUserModal = (props) => {
                                             ? t('付费余额')
                                             : t('赠送余额')}
                                         </Tag>
-                                        <Tag>{adjustment.sourceType}</Tag>
+                                        <Tag>
+                                          {getAdjustmentSourceLabel(adjustment)}
+                                        </Tag>
                                       </Space>
                                       <Text>
                                         {`${t('本次调整')} ${formatUSD(
@@ -783,6 +898,14 @@ const EditUserModal = (props) => {
                                           true,
                                         )}`}
                                       </Text>
+                                      {adjustment.fundingType === 'paid' &&
+                                      adjustment.inputCurrency === 'CNY' ? (
+                                        <Text type='secondary'>
+                                          {`${t('输入金额')} ¥${Number(
+                                            adjustment.inputAmount || 0,
+                                          ).toFixed(2)} CNY`}
+                                        </Text>
+                                      ) : null}
                                       <Text>
                                         {`${t('平台展示值')} ${renderQuota(
                                           adjustment.deltaQuota,
@@ -850,11 +973,17 @@ const EditUserModal = (props) => {
                 <Card className='!rounded-2xl shadow-sm border-0'>
                   <div className='flex items-center justify-between gap-3'>
                     <div className='flex items-center min-w-0'>
-                      <Avatar size='small' color='purple' className='mr-2 shadow-md'>
+                      <Avatar
+                        size='small'
+                        color='purple'
+                        className='mr-2 shadow-md'
+                      >
                         <IconLink size={16} />
                       </Avatar>
                       <div className='min-w-0'>
-                        <Text className='text-lg font-medium'>{t('绑定信息')}</Text>
+                        <Text className='text-lg font-medium'>
+                          {t('绑定信息')}
+                        </Text>
                         <div className='text-xs text-gray-600'>
                           {t('管理用户已绑定的第三方账号，支持查看与解绑')}
                         </div>
@@ -911,7 +1040,11 @@ const EditUserModal = (props) => {
             <Card className='!rounded-2xl border-0 bg-[var(--semi-color-fill-0)] w-full'>
               <Space vertical align='start' spacing='tight'>
                 <Text className='text-base font-medium'>
-                  {t('输入 USD，系统自动换算展示值；确认后先加入待提交列表')}
+                  {t(
+                    adjustmentFundingType === 'paid'
+                      ? '选择币种并输入金额，系统自动换算为 USD；确认后先加入待提交列表'
+                      : '输入 USD，系统自动换算展示值；确认后先加入待提交列表',
+                  )}
                 </Text>
                 <Text type='secondary'>{t('当前余额')}</Text>
                 <Title heading={5} className='!mb-0'>
@@ -930,13 +1063,48 @@ const EditUserModal = (props) => {
               </Space>
             </Card>
 
-            {adjustmentFundingType === 'gift' ? (
+            <div style={{ width: '100%' }}>
+              <Text size='small'>
+                {t(adjustmentFundingType === 'paid' ? '调整原因' : '来源类别')}
+              </Text>
+              <select
+                value={adjustmentSourceType}
+                onChange={(event) =>
+                  setAdjustmentSourceType(event.target.value)
+                }
+                style={{
+                  width: '100%',
+                  marginTop: 8,
+                  minHeight: 36,
+                  borderRadius: 8,
+                  border: '1px solid var(--semi-color-border)',
+                  padding: '0 12px',
+                  background: 'var(--semi-color-bg-2)',
+                }}
+              >
+                {adjustmentFundingType === 'paid' ? (
+                  <option value='' disabled>
+                    {t('请选择调整原因')}
+                  </option>
+                ) : null}
+                {(adjustmentFundingType === 'paid'
+                  ? paidAdjustmentReasonOptions
+                  : giftSourceOptions
+                ).map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {adjustmentFundingType === 'paid' ? (
               <div style={{ width: '100%' }}>
-                <Text size='small'>{t('来源类别')}</Text>
+                <Text size='small'>{t('输入币种')}</Text>
                 <select
-                  value={adjustmentSourceType}
+                  value={paidAdjustmentCurrency}
                   onChange={(event) =>
-                    setAdjustmentSourceType(event.target.value || 'admin_grant')
+                    setPaidAdjustmentCurrency(event.target.value || 'CNY')
                   }
                   style={{
                     width: '100%',
@@ -948,30 +1116,64 @@ const EditUserModal = (props) => {
                     background: 'var(--semi-color-bg-2)',
                   }}
                 >
-                  {giftSourceOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
+                  <option value='CNY'>{t('人民币（CNY）')}</option>
+                  <option value='USD'>{t('美元（USD）')}</option>
                 </select>
-              </div>
-            ) : null}
 
-            <div style={{ width: '100%' }}>
-              <Text size='small'>{t('输入 USD 调整金额')}</Text>
-              <Input
-                type='number'
-                style={{ width: '100%', marginTop: 8 }}
-                value={adjustmentAmountUSD}
-                onChange={(value) => setAdjustmentAmountUSD(value || '')}
-                placeholder={t('正数为增加，负数为扣减')}
-              />
-              <Text type='secondary' size='small'>
-                {`${t('对应平台展示值')} ${renderQuota(
-                  currentAdjustmentDeltaQuota,
-                )}`}
-              </Text>
-            </div>
+                <Text size='small' className='block mt-3'>
+                  {t('输入金额')}
+                </Text>
+                <Input
+                  type='number'
+                  style={{ width: '100%', marginTop: 8 }}
+                  value={paidAdjustmentInputAmount}
+                  onChange={(value) =>
+                    setPaidAdjustmentInputAmount(value || '')
+                  }
+                  suffix={paidAdjustmentCurrency}
+                  placeholder={t('正数为增加，负数为扣减')}
+                />
+
+                <Text size='small' className='block mt-3'>
+                  {t('调整金额 USD')}
+                </Text>
+                <Input
+                  readOnly
+                  style={{ width: '100%', marginTop: 8 }}
+                  value={paidAdjustmentAmountUSD}
+                  suffix='USD'
+                  placeholder={t('输入金额后自动换算')}
+                />
+                <Text type='secondary' size='small'>
+                  {paidAdjustmentCurrency === 'CNY'
+                    ? `${t('系统汇率')}：1 USD = ${usdCnyExchangeRate || '-'} CNY`
+                    : t('USD 无需换算')}
+                </Text>
+                <div>
+                  <Text type='secondary' size='small'>
+                    {`${t('对应平台展示值')} ${renderQuota(
+                      currentAdjustmentDeltaQuota,
+                    )}`}
+                  </Text>
+                </div>
+              </div>
+            ) : (
+              <div style={{ width: '100%' }}>
+                <Text size='small'>{t('输入 USD 调整金额')}</Text>
+                <Input
+                  type='number'
+                  style={{ width: '100%', marginTop: 8 }}
+                  value={adjustmentAmountUSD}
+                  onChange={(value) => setAdjustmentAmountUSD(value || '')}
+                  placeholder={t('正数为增加，负数为扣减')}
+                />
+                <Text type='secondary' size='small'>
+                  {`${t('对应平台展示值')} ${renderQuota(
+                    currentAdjustmentDeltaQuota,
+                  )}`}
+                </Text>
+              </div>
+            )}
 
             {adjustmentFundingType === 'paid' ? (
               <div style={{ width: '100%' }}>
@@ -981,7 +1183,7 @@ const EditUserModal = (props) => {
                   style={{ width: '100%', marginTop: 8 }}
                   value={adjustmentRevenueUSD}
                   onChange={(value) => setAdjustmentRevenueUSD(value || '')}
-                  placeholder={t('默认等于本次调整的 USD 值')}
+                  placeholder={t('充值默认等于增加金额，其他原因默认 0')}
                 />
                 <Text type='secondary' size='small'>
                   {`${t('当前确认收入预览')} ${formatUSD(
@@ -998,9 +1200,7 @@ const EditUserModal = (props) => {
                 onChange={setAdjustmentRemark}
                 rows={4}
                 style={{ marginTop: 8 }}
-                placeholder={t(
-                  '用于财务审计说明，例如活动名、补偿原因',
-                )}
+                placeholder={t('用于财务审计说明，例如活动名、补偿原因')}
               />
             </div>
 

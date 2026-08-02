@@ -67,6 +67,7 @@ func AdjustUserQuotaByAdmin(c *gin.Context) {
 	sourceType, err := resolveQuotaAdjustmentSourceType(
 		fundingType,
 		req.DeltaQuota,
+		req.SourceType,
 		model.HasPermission(operatorRole, operatorStaffRole, common.PermissionSystemManage),
 	)
 	if err != nil {
@@ -88,14 +89,7 @@ func AdjustUserQuotaByAdmin(c *gin.Context) {
 		revenueUSD = *req.RevenueUSD
 	}
 
-	entryType := model.CustomerMonthlyStatementEntryTypeAdjustment
-	if req.DeltaQuota > 0 {
-		if fundingType == model.QuotaFundingTypePaid {
-			entryType = model.CustomerMonthlyStatementEntryTypeTopup
-		} else {
-			entryType = model.CustomerMonthlyStatementEntryTypeGift
-		}
-	}
+	entryType := resolveQuotaAdjustmentEntryType(fundingType, req.DeltaQuota, sourceType)
 
 	if err := model.AdjustUserQuotaWithAudit(model.UserQuotaAdjustmentParams{
 		UserId:                   targetUserId,
@@ -131,15 +125,39 @@ func AdjustUserQuotaByAdmin(c *gin.Context) {
 	})
 }
 
-func resolveQuotaAdjustmentSourceType(fundingType string, deltaQuota int, isRoot bool) (string, error) {
+func resolveQuotaAdjustmentSourceType(fundingType string, deltaQuota int, requestedSourceType string, isRoot bool) (string, error) {
 	if strings.TrimSpace(fundingType) == model.QuotaFundingTypePaid {
 		if !isRoot {
 			return "", errors.New("only root can adjust paid quota")
 		}
-		return model.QuotaFundingSourceSystemAdjust, nil
+		sourceType := strings.TrimSpace(requestedSourceType)
+		switch sourceType {
+		case model.QuotaFundingSourceCompensation,
+			model.QuotaFundingSourceRefund,
+			model.QuotaFundingSourceManualTopUp,
+			model.QuotaFundingSourceAccountClosure:
+			return sourceType, nil
+		case "":
+			return "", errors.New("paid quota adjustment reason is required")
+		default:
+			return "", errors.New("invalid paid quota adjustment reason")
+		}
 	}
 	if deltaQuota > 0 {
 		return model.QuotaFundingSourceAdminGrant, nil
 	}
 	return model.QuotaFundingSourceSystemAdjust, nil
+}
+
+func resolveQuotaAdjustmentEntryType(fundingType string, deltaQuota int, sourceType string) string {
+	if deltaQuota <= 0 {
+		return model.CustomerMonthlyStatementEntryTypeAdjustment
+	}
+	if strings.TrimSpace(fundingType) == model.QuotaFundingTypeGift {
+		return model.CustomerMonthlyStatementEntryTypeGift
+	}
+	if strings.TrimSpace(sourceType) == model.QuotaFundingSourceManualTopUp {
+		return model.CustomerMonthlyStatementEntryTypeTopup
+	}
+	return model.CustomerMonthlyStatementEntryTypeAdjustment
 }

@@ -51,7 +51,7 @@ const { Text, Title } = Typography;
 const IMAGE_ENDPOINT_TYPE = 'image-generation';
 const IMAGE_HISTORY_STORAGE_KEY = 'image_playground_history';
 const MAX_HISTORY_ITEMS = 8;
-const MAX_HISTORY_CHARS = 4_000_000;
+const MAX_HISTORY_CHARS = 4000000;
 const IMAGE_REQUEST_TIMEOUT_MS = 610000;
 
 const gptImage2SizeOptions = [
@@ -247,22 +247,50 @@ const fileToDataUrl = (file) =>
     reader.readAsDataURL(file);
   });
 
-const normalizeReferenceFileName = (name = 'referenced-image') => {
+const normalizeReferenceFileName = (
+  name = 'referenced-image',
+  contentType = 'image/png',
+) => {
   const cleanName =
     String(name)
       .replace(/\.[a-z0-9]+$/i, '')
       .replace(/[^a-zA-Z0-9._-]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'referenced-image';
-  return `${cleanName}.png`;
+  const extension =
+    contentType === 'image/jpeg'
+      ? 'jpg'
+      : contentType === 'image/webp'
+        ? 'webp'
+        : contentType === 'image/gif'
+          ? 'gif'
+          : 'png';
+  return `${cleanName}.${extension}`;
 };
 
 const imageSourceToReferenceImage = async (src, name) => {
-  const response = await fetch(src);
-  if (!response.ok) {
-    throw new Error('Failed to load image source');
+  let blob;
+  if (src.startsWith('data:') || src.startsWith('blob:')) {
+    const response = await fetch(src);
+    if (!response.ok) {
+      throw new Error('Failed to load image source');
+    }
+    blob = await response.blob();
+  } else {
+    const response = await API.post(
+      '/pg/images/reference',
+      { url: src },
+      {
+        responseType: 'blob',
+        timeout: 60000,
+        skipErrorHandler: true,
+      },
+    );
+    blob = response.data;
   }
-  const blob = await response.blob();
-  const fileName = normalizeReferenceFileName(name);
+  if (!blob || !blob.type.startsWith('image/')) {
+    throw new Error('Reference source is not an image');
+  }
+  const fileName = normalizeReferenceFileName(name, blob.type);
   const file = new File([blob], fileName, {
     type: blob.type || 'image/png',
   });
@@ -484,7 +512,9 @@ const ImagePlayground = () => {
       return;
     }
     if (!canEditSelectedModel || maxReferenceImages <= 0) {
-      Toast.warning('当前模型不支持参考图改图，请切换到 gpt-image 或 MAI-Image-2.5 系列模型');
+      Toast.warning(
+        '当前模型不支持参考图改图，请切换到 gpt-image 或 MAI-Image-2.5 系列模型',
+      );
       return;
     }
     if (referenceImages.length >= maxReferenceImages) {
@@ -494,6 +524,13 @@ const ImagePlayground = () => {
 
     try {
       const referenceImage = await imageSourceToReferenceImage(src, name);
+      if (
+        selectedModelProfile.kind === 'mai' &&
+        !isMaiReferenceImageFile(referenceImage.file)
+      ) {
+        Toast.warning('MAI-Image-2.5 编辑仅支持 PNG 或 JPEG 参考图');
+        return;
+      }
       setReferenceImages((current) => {
         if (current.length >= maxReferenceImages) {
           return current;
@@ -617,7 +654,9 @@ const ImagePlayground = () => {
       return;
     }
     if (referenceImages.length > 0 && !canEditSelectedModel) {
-      Toast.warning('当前模型不支持参考图改图，请选择 gpt-image 或 MAI-Image-2.5 系列模型');
+      Toast.warning(
+        '当前模型不支持参考图改图，请选择 gpt-image 或 MAI-Image-2.5 系列模型',
+      );
       return;
     }
 

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
@@ -14,6 +16,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const playgroundReferenceImageMaxBytes = 25 * 1024 * 1024
+
+type playgroundImageReferenceRequest struct {
+	URL string `json:"url"`
+}
 
 func Playground(c *gin.Context) {
 	playgroundRelay(c, types.RelayFormatOpenAI)
@@ -40,6 +48,67 @@ func PlaygroundImage(c *gin.Context) {
 	originalWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(responseBody)))
 	originalWriter.WriteHeader(captureWriter.statusCode)
 	_, _ = originalWriter.Write(responseBody)
+}
+
+func PlaygroundImageReference(c *gin.Context) {
+	var request playgroundImageReferenceRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
+		return
+	}
+
+	imageURL := strings.TrimSpace(request.URL)
+	if imageURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "image url is required"})
+		return
+	}
+
+	response, err := service.DoDownloadRequest(imageURL, "image playground reference")
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"message": "failed to load reference image"})
+		return
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		c.JSON(http.StatusBadGateway, gin.H{"message": "reference image source returned an error"})
+		return
+	}
+
+	imageBytes, err := io.ReadAll(io.LimitReader(response.Body, playgroundReferenceImageMaxBytes+1))
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"message": "failed to read reference image"})
+		return
+	}
+	contentType, err := validatePlaygroundReferenceImage(imageBytes, response.Header.Get("Content-Type"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.Header("Cache-Control", "private, no-store")
+	c.Data(http.StatusOK, contentType, imageBytes)
+}
+
+func validatePlaygroundReferenceImage(imageBytes []byte, upstreamContentType string) (string, error) {
+	if len(imageBytes) == 0 {
+		return "", errors.New("reference image is empty")
+	}
+	if len(imageBytes) > playgroundReferenceImageMaxBytes {
+		return "", errors.New("reference image exceeds 25 MB")
+	}
+
+	detectedContentType := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(imageBytes), ";")[0]))
+	switch detectedContentType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		return detectedContentType, nil
+	}
+
+	upstreamContentType = strings.ToLower(strings.TrimSpace(strings.Split(upstreamContentType, ";")[0]))
+	if strings.HasPrefix(upstreamContentType, "image/") {
+		return "", errors.New("unsupported reference image format")
+	}
+	return "", errors.New("reference source is not an image")
 }
 
 type playgroundImageResponseWriter struct {
