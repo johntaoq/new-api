@@ -49,6 +49,13 @@ export const useNavigation = (t, docsLink, headerNavModules) => {
         itemKey: 'pricing',
         to: '/pricing',
       },
+      {
+        text: '专业生图',
+        itemKey: 'professional-image',
+        isExternal: true,
+        externalLink: 'https://www.pic365.org/',
+        alwaysVisible: true,
+      },
       ...(docsLink
         ? [
             {
@@ -68,6 +75,9 @@ export const useNavigation = (t, docsLink, headerNavModules) => {
 
     // 根据配置过滤导航链接
     return allLinks.filter((link) => {
+      if (link.alwaysVisible) {
+        return true;
+      }
       if (link.itemKey === 'docs') {
         return docsLink && modules.docs;
       }

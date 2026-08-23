@@ -578,9 +578,15 @@ func endpointTypesContain(endpointTypes []constant.EndpointType, target constant
 }
 
 type studioImageSizeConstraints struct {
-	MinWidth  int `json:"min_width"`
-	MinHeight int `json:"min_height"`
-	MaxPixels int `json:"max_pixels"`
+	MinWidth       int     `json:"min_width"`
+	MinHeight      int     `json:"min_height"`
+	MaxWidth       int     `json:"max_width"`
+	MaxHeight      int     `json:"max_height"`
+	DimensionStep  int     `json:"dimension_step"`
+	MinPixels      int     `json:"min_pixels"`
+	MaxPixels      int     `json:"max_pixels"`
+	MinAspectRatio float64 `json:"min_aspect_ratio"`
+	MaxAspectRatio float64 `json:"max_aspect_ratio"`
 }
 
 type studioImageModelConfig struct {
@@ -629,6 +635,18 @@ func defaultMaiImageSizeConstraints() *studioImageSizeConstraints {
 	}
 }
 
+func defaultGPTImage2SizeConstraints() *studioImageSizeConstraints {
+	return &studioImageSizeConstraints{
+		MaxWidth:       3840,
+		MaxHeight:      3840,
+		DimensionStep:  16,
+		MinPixels:      655360,
+		MaxPixels:      8294400,
+		MinAspectRatio: 1.0 / 3.0,
+		MaxAspectRatio: 3.0,
+	}
+}
+
 func studioImageConfigForModel(modelName string) studioImageModelConfig {
 	normalized := strings.ToLower(modelName)
 	if strings.Contains(normalized, "mai-image") {
@@ -646,7 +664,7 @@ func studioImageConfigForModel(modelName string) studioImageModelConfig {
 			SupportsN:          false,
 			MaxN:               1,
 			RequestShape:       "width-height",
-			SizeMode:           "preset",
+			SizeMode:           "custom",
 			SizeConstraints:    defaultMaiImageSizeConstraints(),
 			SupportsImageEdit:  supportsEdit,
 			MaxReferenceImages: maxReferenceImages,
@@ -663,7 +681,8 @@ func studioImageConfigForModel(modelName string) studioImageModelConfig {
 			SupportsN:          true,
 			MaxN:               3,
 			RequestShape:       "size",
-			SizeMode:           "preset",
+			SizeMode:           "custom",
+			SizeConstraints:    defaultGPTImage2SizeConstraints(),
 			SupportsImageEdit:  true,
 			MaxReferenceImages: 16,
 			ReferenceMimeTypes: []string{"image/png", "image/jpeg", "image/webp"},
@@ -793,11 +812,9 @@ func parseStudioImageSize(size string) (int, int, bool) {
 }
 
 func (config studioImageModelConfig) supportsSize(size string) bool {
-	if stringSliceContains(config.Sizes, size) {
-		return true
-	}
+	isPresetSize := stringSliceContains(config.Sizes, size)
 	if config.SizeConstraints == nil {
-		return false
+		return isPresetSize
 	}
 	width, height, ok := parseStudioImageSize(size)
 	if !ok {
@@ -809,8 +826,31 @@ func (config studioImageModelConfig) supportsSize(size string) bool {
 	if config.SizeConstraints.MinHeight > 0 && height < config.SizeConstraints.MinHeight {
 		return false
 	}
-	if config.SizeConstraints.MaxPixels > 0 && width*height > config.SizeConstraints.MaxPixels {
+	if config.SizeConstraints.MaxWidth > 0 && width > config.SizeConstraints.MaxWidth {
 		return false
+	}
+	if config.SizeConstraints.MaxHeight > 0 && height > config.SizeConstraints.MaxHeight {
+		return false
+	}
+	if config.SizeConstraints.DimensionStep > 0 &&
+		(width%config.SizeConstraints.DimensionStep != 0 || height%config.SizeConstraints.DimensionStep != 0) {
+		return false
+	}
+	pixels := width * height
+	if config.SizeConstraints.MinPixels > 0 && pixels < config.SizeConstraints.MinPixels {
+		return false
+	}
+	if config.SizeConstraints.MaxPixels > 0 && pixels > config.SizeConstraints.MaxPixels {
+		return false
+	}
+	if config.SizeConstraints.MinAspectRatio > 0 || config.SizeConstraints.MaxAspectRatio > 0 {
+		aspectRatio := float64(width) / float64(height)
+		if config.SizeConstraints.MinAspectRatio > 0 && aspectRatio < config.SizeConstraints.MinAspectRatio {
+			return false
+		}
+		if config.SizeConstraints.MaxAspectRatio > 0 && aspectRatio > config.SizeConstraints.MaxAspectRatio {
+			return false
+		}
 	}
 	return true
 }

@@ -376,6 +376,11 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		return
 	}
 
+	if common.GetContextKeyBool(c, constant.ContextKeyDoubaoNativeAPI) {
+		respBody, taskResp = doubaoNativeFetchByIDRespBodyBuilder(originTask)
+		return
+	}
+
 	isOpenAIVideoAPI := strings.HasPrefix(c.Request.RequestURI, "/v1/videos/")
 
 	// Gemini/Vertex 支持实时查询：用户 fetch 时直接从上游拉取最新状态
@@ -535,6 +540,93 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 		return "queued"
 	default:
 		return "processing"
+	}
+}
+
+func doubaoNativeFetchByIDRespBodyBuilder(task *model.Task) (respBody []byte, taskResp *dto.TaskError) {
+	if task.Platform != constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeDoubaoVideo)) {
+		taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("not a doubao video task: %s", task.Platform), "invalid_task_platform", http.StatusBadRequest)
+		return
+	}
+
+	raw := map[string]any{}
+	if len(task.Data) > 0 {
+		if err := common.Unmarshal(task.Data, &raw); err != nil {
+			taskResp = service.TaskErrorWrapper(err, "unmarshal_doubao_task_data_failed", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	raw["id"] = task.TaskID
+	if _, ok := raw["model"]; !ok && task.Properties.OriginModelName != "" {
+		raw["model"] = task.Properties.OriginModelName
+	}
+	if _, ok := raw["status"]; !ok {
+		raw["status"] = mapTaskStatusToDoubaoNative(task.Status)
+	}
+	if _, ok := raw["created_at"]; !ok && task.CreatedAt > 0 {
+		raw["created_at"] = task.CreatedAt
+	}
+	if _, ok := raw["updated_at"]; !ok && task.UpdatedAt > 0 {
+		raw["updated_at"] = task.UpdatedAt
+	}
+	if task.Status == model.TaskStatusFailure {
+		if _, ok := raw["error"]; !ok {
+			raw["error"] = map[string]any{
+				"code":    "task_failed",
+				"message": task.FailReason,
+			}
+		}
+	}
+	normalizeDoubaoNativeContent(raw, task)
+
+	respBody, err := common.Marshal(raw)
+	if err != nil {
+		taskResp = service.TaskErrorWrapper(err, "marshal_doubao_native_response_failed", http.StatusInternalServerError)
+		return
+	}
+	return
+}
+
+func mapTaskStatusToDoubaoNative(status model.TaskStatus) string {
+	switch status {
+	case model.TaskStatusSuccess:
+		return "succeeded"
+	case model.TaskStatusFailure:
+		return "failed"
+	case model.TaskStatusQueued, model.TaskStatusSubmitted, model.TaskStatusNotStart:
+		return "queued"
+	case model.TaskStatusInProgress:
+		return "running"
+	default:
+		return "pending"
+	}
+}
+
+func normalizeDoubaoNativeContent(raw map[string]any, task *model.Task) {
+	content, ok := raw["content"].(map[string]any)
+	if !ok {
+		if task.Status != model.TaskStatusSuccess {
+			return
+		}
+		content = map[string]any{}
+		raw["content"] = content
+	}
+
+	if _, ok := content["video_url"]; !ok {
+		if videoURL, _ := content["kz_video_url"].(string); videoURL != "" {
+			content["video_url"] = videoURL
+		} else if resultURL := task.GetResultURL(); resultURL != "" {
+			content["video_url"] = resultURL
+		}
+	}
+
+	if _, ok := content["last_frame_url"]; !ok {
+		if lastFrameURL, _ := content["kz_last_frame_url"].(string); lastFrameURL != "" {
+			content["last_frame_url"] = lastFrameURL
+		} else {
+			content["last_frame_url"] = ""
+		}
 	}
 }
 

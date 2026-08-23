@@ -256,6 +256,7 @@ func SetApiRouter(router *gin.Engine) {
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.RequirePermission("ops.manage"))
 		{
+			channelRoute.GET("", controller.GetAllChannels)
 			channelRoute.GET("/", controller.GetAllChannels)
 			channelRoute.GET("/search", controller.SearchChannels)
 			channelRoute.GET("/models", controller.ChannelListModels)
@@ -267,7 +268,9 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/test/:id", controller.TestChannel)
 			channelRoute.GET("/update_balance", controller.UpdateAllChannelsBalance)
 			channelRoute.GET("/update_balance/:id", controller.UpdateChannelBalance)
+			channelRoute.POST("", controller.AddChannel)
 			channelRoute.POST("/", controller.AddChannel)
+			channelRoute.PUT("", controller.UpdateChannel)
 			channelRoute.PUT("/", controller.UpdateChannel)
 			channelRoute.POST("/status/batch", controller.BatchUpdateChannelStatus)
 			channelRoute.POST("/:id/status", controller.UpdateChannelStatus)

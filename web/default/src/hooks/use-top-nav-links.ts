@@ -86,6 +86,13 @@ export function useTopNavLinks(): TopNavLink[] {
     links.push({ title: t('Rankings'), href: '/rankings', requiresAuth })
   }
 
+  // Professional image generation (external)
+  links.push({
+    title: '专业生图',
+    href: 'https://www.pic365.org/',
+    external: true,
+  })
+
   // Docs (supports external links)
   if (modules?.docs !== false) {
     if (docsLink) {

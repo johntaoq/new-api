@@ -28,7 +28,16 @@ func SetVideoRouter(router *gin.Engine) {
 	// docs: https://platform.openai.com/docs/api-reference/videos/create
 	{
 		videoV1Router.POST("/videos", controller.RelayTask)
+		videoV1Router.GET("/videos", controller.RelayTaskFetch)
 		videoV1Router.GET("/videos/:task_id", controller.RelayTaskFetch)
+	}
+
+	doubaoNativeRouter := router.Group("/api/v3/contents/generations")
+	doubaoNativeRouter.Use(middleware.RouteTag("relay"))
+	doubaoNativeRouter.Use(middleware.TokenAuth(), middleware.DoubaoNativeRequestConvert(), middleware.Distribute())
+	{
+		doubaoNativeRouter.POST("/tasks", controller.RelayTask)
+		doubaoNativeRouter.GET("/tasks/:task_id", controller.RelayTaskFetch)
 	}
 
 	klingV1Router := router.Group("/kling/v1")

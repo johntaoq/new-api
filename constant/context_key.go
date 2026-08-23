@@ -72,4 +72,8 @@ const (
 	// fallback in authHelper (finishAdminAudit) skips its record to avoid
 	// duplicate entries.
 	ContextKeyAuditLogged ContextKey = "audit_logged"
+
+	// ContextKeyDoubaoNativeAPI marks Volcengine/Doubao native video-format
+	// requests that are internally routed through the normal video task flow.
+	ContextKeyDoubaoNativeAPI ContextKey = "doubao_native_api"
 )

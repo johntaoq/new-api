@@ -227,6 +227,11 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		return
 	}
 
+	if common.GetContextKeyBool(c, constant.ContextKeyDoubaoNativeAPI) {
+		c.JSON(http.StatusOK, responsePayload{ID: info.PublicTaskID})
+		return dResp.ID, responseBody, nil
+	}
+
 	ov := dto.NewOpenAIVideo()
 	ov.ID = info.PublicTaskID
 	ov.TaskID = info.PublicTaskID
