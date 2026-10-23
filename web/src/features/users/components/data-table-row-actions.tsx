@@ -214,6 +214,18 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         ariaLabel={t('Open menu')}
         contentClassName='w-48'
       >
+        <DropdownMenuItem
+          onClick={() => {
+            setCurrentRow(user)
+            setOpen('reset-password')
+          }}
+        >
+          {t('Reset password')}
+          <DropdownMenuShortcut>
+            <KeyRound size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         {isDisabled ? (
           <DropdownMenuItem onClick={() => handleManage('enable')}>
             {t('Enable')}

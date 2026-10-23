@@ -40,7 +40,9 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
+import { hasPermission } from '@/lib/admin-permissions'
 import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -50,6 +52,10 @@ import { ROLE } from '@/lib/roles'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const user = useAuthStore((state) => state.auth.user)
+  const showFinance =
+    hasPermission(user, 'finance', 'read') ||
+    hasPermission(user, 'finance', 'audit')
 
   return {
     navGroups: [
@@ -132,6 +138,9 @@ export function useSidebarData(): SidebarData {
         id: 'admin',
         title: t('Admin'),
         items: [
+          ...(showFinance
+            ? [{ title: t('Finance Center'), url: '/finance', icon: Wallet }]
+            : []),
           {
             title: t('Channels'),
             url: '/channels',

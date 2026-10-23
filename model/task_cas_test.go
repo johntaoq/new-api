@@ -60,6 +60,11 @@ func TestMain(m *testing.M) {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&UserAccessToken{},
+		&UserQuotaFunding{}, &UserBalanceLedger{}, &FinancialAuditLog{},
+		&ChannelCostLedger{}, &ChannelCostAllocation{},
+		&CustomerMonthlyStatement{}, &CustomerMonthlyStatementItem{},
+		&ChannelMonthlyStatement{}, &ChannelMonthlyStatementItem{},
+		&Redemption{}, &Checkin{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -71,6 +76,15 @@ func truncateTables(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		DB.Exec("DELETE FROM tasks")
+		for _, table := range []string{
+			"user_quota_fundings", "user_balance_ledgers", "financial_audit_logs",
+			"channel_cost_ledgers", "channel_cost_allocations",
+			"customer_monthly_statements", "customer_monthly_statement_items",
+			"channel_monthly_statements", "channel_monthly_statement_items",
+			"redemptions", "checkins",
+		} {
+			DB.Exec("DELETE FROM " + table)
+		}
 		DB.Exec("DELETE FROM auth_flows")
 		DB.Exec("DELETE FROM external_identity_claims")
 		DB.Exec("DELETE FROM user_sessions")

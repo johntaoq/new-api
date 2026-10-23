@@ -23,6 +23,7 @@ import {
   waitFor,
   type RenderResult,
 } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test } from 'vitest'
 
 import type { Redemption } from '../../types'
@@ -76,6 +77,8 @@ function redemption(id: number, quota = 500001): Redemption {
     key: `key-${id}`,
     status: 1,
     quota,
+    funding_type: 'gift',
+    remark: 'Test promotion',
     created_time: 1,
     redeemed_time: 0,
     expired_time: 0,
@@ -187,6 +190,37 @@ afterEach(() => {
 })
 
 describe('redemption drawer', () => {
+  test.each(['gift', 'paid'] as const)(
+    'converts %s card face value between CNY and USD without using COS',
+    async (fundingType) => {
+      const original = { ...redemption(1, 5000000), funding_type: fundingType }
+      apiClient.get = async () => ({ data: { success: true, data: original } })
+      const updates: Array<Record<string, unknown>> = []
+      apiClient.put = async (_url, data) => {
+        updates.push(data as Record<string, unknown>)
+        return { data: { success: true, data: original } }
+      }
+      await renderDrawer(original, {
+        quotaDisplayType: 'CNY',
+        usdExchangeRate: 7,
+      })
+      await waitForLoadedForm()
+      expect(getControlByLabel('Quota (CNY)')).toHaveValue(70)
+      await userEvent.click(screen.getByLabelText('Currency'))
+      await userEvent.click(
+        screen.getByRole('option', { name: 'USD' })
+      )
+      expect(getControlByLabel('Quota (USD)')).toHaveValue(10)
+      submitForm()
+      await waitFor(() => expect(updates).toHaveLength(1))
+      expect(updates[0]).toMatchObject({
+        quota: 5000000,
+        currency: 'USD',
+        input_amount: 10,
+      })
+      expect(screen.queryByText('COS')).not.toBeInTheDocument()
+    }
+  )
   test('shows the reported CNY quota without floating-point noise', async () => {
     const original = redemption(1, 13888889)
     apiClient.get = async () => ({ data: { success: true, data: original } })

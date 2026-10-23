@@ -11,18 +11,26 @@ import (
 )
 
 type Redemption struct {
-	Id           int            `json:"id"`
-	UserId       int            `json:"user_id"`
-	Key          string         `json:"key" gorm:"type:char(32);uniqueIndex"`
-	Status       int            `json:"status" gorm:"default:1"`
-	Name         string         `json:"name" gorm:"index"`
-	Quota        int            `json:"quota" gorm:"default:100"`
-	CreatedTime  int64          `json:"created_time" gorm:"bigint"`
-	RedeemedTime int64          `json:"redeemed_time" gorm:"bigint"`
-	Count        int            `json:"count" gorm:"-:all"` // only for api request
-	UsedUserId   int            `json:"used_user_id"`
-	DeletedAt    gorm.DeletedAt `gorm:"index"`
-	ExpiredTime  int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
+	Id                   int            `json:"id"`
+	UserId               int            `json:"user_id"`
+	Key                  string         `json:"key" gorm:"type:char(32);uniqueIndex"`
+	Status               int            `json:"status" gorm:"default:1"`
+	Name                 string         `json:"name" gorm:"index"`
+	Quota                int            `json:"quota" gorm:"default:100"`
+	FundingType          string         `json:"funding_type" gorm:"type:varchar(16);default:'gift'"`
+	AmountUSD            float64        `json:"amount_usd" gorm:"default:0"`
+	InputAmount          float64        `json:"input_amount" gorm:"default:0"`
+	Currency             string         `json:"currency" gorm:"type:varchar(3);default:''"`
+	ExchangeRate         float64        `json:"exchange_rate" gorm:"default:0"`
+	RecognizedRevenueUSD float64        `json:"recognized_revenue_usd" gorm:"default:0"`
+	Remark               string         `json:"remark" gorm:"type:varchar(255);default:''"`
+	QuotaPerUnitSnapshot float64        `json:"quota_per_unit_snapshot" gorm:"default:0"`
+	CreatedTime          int64          `json:"created_time" gorm:"bigint"`
+	RedeemedTime         int64          `json:"redeemed_time" gorm:"bigint"`
+	Count                int            `json:"count" gorm:"-:all"` // only for api request
+	UsedUserId           int            `json:"used_user_id"`
+	DeletedAt            gorm.DeletedAt `gorm:"index"`
+	ExpiredTime          int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
 }
 
 func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total int64, err error) {
@@ -56,6 +64,7 @@ func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total 
 		return nil, 0, err
 	}
 
+	normalizeRedemptionSlice(redemptions)
 	return redemptions, total, nil
 }
 
@@ -120,6 +129,7 @@ func SearchRedemptions(keyword string, status string, startIdx int, num int) (re
 		return nil, 0, err
 	}
 
+	normalizeRedemptionSlice(redemptions)
 	return redemptions, total, nil
 }
 
@@ -130,6 +140,7 @@ func GetRedemptionById(id int) (*Redemption, error) {
 	redemption := Redemption{Id: id}
 	var err error = nil
 	err = DB.First(&redemption, "id = ?", id).Error
+	redemption.normalizeForResponse()
 	return &redemption, err
 }
 
@@ -174,7 +185,12 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if result.RowsAffected == 0 {
 			return errors.New("redemption code already used")
 		}
-		return creditTopUpQuota(tx, userId, redemption.Quota, nil)
+		redemption.normalizeForResponse()
+		return creditTopUpQuota(tx, userId, redemption.Quota, nil, QuotaFundingGrantParams{
+			FundingType: redemption.FundingType, SourceType: redemption.grantSourceType(),
+			SourceRefId: redemption.Id, SourceName: redemption.Name,
+			RevenueUSD: redemption.RecognizedRevenueUSD, Remark: buildRedemptionGrantRemark(redemption),
+		})
 	})
 	if err != nil {
 		common.SysError(common.LogText("redemption failed: %s", err.Error()))
@@ -186,6 +202,9 @@ func Redeem(key string, userId int) (quota int, err error) {
 }
 
 func (redemption *Redemption) Insert() error {
+	if err := redemption.ValidateFinance(); err != nil {
+		return err
+	}
 	if redemption.Quota <= 0 {
 		return errors.New("redemption quota must be positive")
 	}
@@ -204,6 +223,9 @@ func (redemption *Redemption) SelectUpdate() error {
 
 // Update Make sure your token's fields is completed, because this will update non-zero values
 func (redemption *Redemption) Update() error {
+	if err := redemption.ValidateFinance(); err != nil {
+		return err
+	}
 	if redemption.Quota <= 0 {
 		return errors.New("redemption quota must be positive")
 	}
@@ -211,7 +233,8 @@ func (redemption *Redemption) Update() error {
 		return err
 	}
 	var err error
-	err = DB.Model(redemption).Select("name", "status", "quota", "redeemed_time", "expired_time").Updates(redemption).Error
+	err = DB.Model(redemption).Select("name", "status", "quota", "redeemed_time", "expired_time",
+		"funding_type", "amount_usd", "recognized_revenue_usd", "remark", "quota_per_unit_snapshot").Updates(redemption).Error
 	return err
 }
 

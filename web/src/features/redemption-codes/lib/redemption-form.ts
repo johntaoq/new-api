@@ -19,10 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 import { z } from 'zod'
 
-import {
-  parseQuotaFromDollars,
-  quotaUnitsToEditableAmount,
-} from '@/lib/format'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import {
   REDEMPTION_VALIDATION,
@@ -36,24 +33,41 @@ import type { RedemptionFormData, Redemption } from '../types'
 
 export function getRedemptionFormSchema(t: TFunction) {
   const msg = getRedemptionFormErrorMessages(t)
-  return z.object({
-    name: z
-      .string()
-      .min(REDEMPTION_VALIDATION.NAME_MIN_LENGTH, msg.NAME_LENGTH_INVALID)
-      .max(REDEMPTION_VALIDATION.NAME_MAX_LENGTH, msg.NAME_LENGTH_INVALID),
-    quota_dollars: z.number().min(0, t('Quota must be a positive number')),
-    expired_time: z.date().optional(),
-    count: z
-      .number()
-      .min(REDEMPTION_VALIDATION.COUNT_MIN, msg.COUNT_INVALID)
-      .max(REDEMPTION_VALIDATION.COUNT_MAX, msg.COUNT_INVALID)
-      .optional(),
-  })
+  return z
+    .object({
+      name: z
+        .string()
+        .min(REDEMPTION_VALIDATION.NAME_MIN_LENGTH, msg.NAME_LENGTH_INVALID)
+        .max(REDEMPTION_VALIDATION.NAME_MAX_LENGTH, msg.NAME_LENGTH_INVALID),
+      quota_dollars: z.number().positive(t('Quota must be a positive number')),
+      currency: z.enum(['USD', 'CNY']),
+      funding_type: z.enum(['paid', 'gift']),
+      recognized_revenue_usd: z.number().min(0, t('Invalid financial amount')),
+      remark: z.string().max(255),
+      expired_time: z.date().optional(),
+      count: z
+        .number()
+        .min(REDEMPTION_VALIDATION.COUNT_MIN, msg.COUNT_INVALID)
+        .max(REDEMPTION_VALIDATION.COUNT_MAX, msg.COUNT_INVALID)
+        .optional(),
+    })
+    .refine(
+      (value) =>
+        value.funding_type !== 'gift' || value.remark.trim().length > 0,
+      {
+        path: ['remark'],
+        message: t('Remark is required for gift vouchers'),
+      }
+    )
 }
 
 export type RedemptionFormValues = {
   name: string
   quota_dollars: number
+  currency: 'USD' | 'CNY'
+  funding_type: 'paid' | 'gift'
+  recognized_revenue_usd: number
+  remark: string
   expired_time?: Date
   count?: number
 }
@@ -65,6 +79,10 @@ export type RedemptionFormValues = {
 export const REDEMPTION_FORM_DEFAULT_VALUES: RedemptionFormValues = {
   name: '',
   quota_dollars: 10,
+  currency: 'USD',
+  funding_type: 'gift',
+  recognized_revenue_usd: 0,
+  remark: '',
   expired_time: undefined,
   count: 1,
 }
@@ -79,9 +97,20 @@ export const REDEMPTION_FORM_DEFAULT_VALUES: RedemptionFormValues = {
 export function transformFormDataToPayload(
   data: RedemptionFormValues
 ): RedemptionFormData {
+  const config = useSystemConfigStore.getState().config.currency
+  const usd =
+    data.currency === 'CNY'
+      ? data.quota_dollars / config.usdExchangeRate
+      : data.quota_dollars
   return {
     name: data.name,
-    quota: parseQuotaFromDollars(data.quota_dollars),
+    quota: Math.round(usd * config.quotaPerUnit),
+    currency: data.currency,
+    input_amount: data.quota_dollars,
+    funding_type: data.funding_type,
+    recognized_revenue_usd:
+      data.funding_type === 'paid' ? data.recognized_revenue_usd : 0,
+    remark: data.remark,
     expired_time: data.expired_time
       ? Math.floor(data.expired_time.getTime() / 1000)
       : 0,
@@ -95,9 +124,19 @@ export function transformFormDataToPayload(
 export function transformRedemptionToFormDefaults(
   redemption: Redemption
 ): RedemptionFormValues {
+  const config = useSystemConfigStore.getState().config.currency
+  const currency =
+    redemption.currency || (config.quotaDisplayType === 'CNY' ? 'CNY' : 'USD')
+  const rate = currency === 'CNY' ? config.usdExchangeRate : 1
   return {
     name: redemption.name,
-    quota_dollars: quotaUnitsToEditableAmount(redemption.quota),
+    quota_dollars:
+      redemption.input_amount ||
+      Number(((redemption.quota / config.quotaPerUnit) * rate).toFixed(4)),
+    currency,
+    funding_type: redemption.funding_type ?? 'gift',
+    recognized_revenue_usd: redemption.recognized_revenue_usd ?? 0,
+    remark: redemption.remark ?? '',
     expired_time:
       redemption.expired_time > 0
         ? new Date(redemption.expired_time * 1000)

@@ -171,6 +171,29 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
       size: 120,
     },
     {
+      accessorKey: 'funding_type',
+      header: t('Funding type'),
+      cell: ({ row }) =>
+        t(
+          row.original.funding_type === 'paid' ? 'Paid voucher' : 'Gift voucher'
+        ),
+      size: 120,
+    },
+    {
+      accessorKey: 'recognized_revenue_usd',
+      header: t('Recognized revenue (USD)'),
+      cell: ({ row }) => `${row.original.recognized_revenue_usd ?? 0} USD`,
+      size: 160,
+    },
+    {
+      accessorKey: 'remark',
+      header: t('Remark'),
+      cell: ({ row }) => (
+        <span className='break-words'>{row.original.remark || '-'}</span>
+      ),
+      size: 200,
+    },
+    {
       accessorKey: 'created_time',
       header: t('Created'),
       meta: { mobileHidden: true },
@@ -233,7 +256,7 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
                   className='cursor-help'
                 />
               }
-            ></TooltipTrigger>
+            />
             <TooltipContent>
               <div className='space-y-1 text-xs'>
                 <div>

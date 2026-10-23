@@ -74,6 +74,33 @@ func TestTopUpQuotaValidation(t *testing.T) {
 	}
 }
 
+func TestFinanceTopupCurrencySnapshot(t *testing.T) {
+	oldRate, oldQuota, oldMin := operation_setting.USDExchangeRate, common.QuotaPerUnit, operation_setting.MinTopUp
+	oldDiscount := operation_setting.GetPaymentSetting().AmountDiscount
+	t.Cleanup(func() {
+		operation_setting.USDExchangeRate, common.QuotaPerUnit, operation_setting.MinTopUp = oldRate, oldQuota, oldMin
+		operation_setting.GetPaymentSetting().AmountDiscount = oldDiscount
+	})
+	operation_setting.USDExchangeRate, common.QuotaPerUnit, operation_setting.MinTopUp = 7, 500000, 10
+	operation_setting.GetPaymentSetting().AmountDiscount = map[int]float64{70: 0.9}
+	order, err := calculateFinanceTopup(70, "CNY", "default")
+	require.NoError(t, err)
+	assert.EqualValues(t, 5000000, order.Quota)
+	assert.Equal(t, 63.0, order.Money)
+	assert.Equal(t, 9.0, order.RevenueUSD)
+	assert.Equal(t, 7.0, order.ExchangeRate)
+	order, err = calculateFinanceTopup(10, "USD", "default")
+	require.NoError(t, err)
+	assert.EqualValues(t, 5000000, order.Quota)
+	assert.Equal(t, 70.0, order.Money)
+	_, err = calculateFinanceTopup(9, "CNY", "default")
+	require.Error(t, err)
+	_, err = calculateFinanceTopup(100, "COS", "default")
+	require.Error(t, err)
+	_, err = calculateFinanceTopup(common.MaxWalletQuota, "USD", "default")
+	require.Error(t, err)
+}
+
 func TestValidateTopUpQuotaReturnsMaximumAmount(t *testing.T) {
 	oldQuotaPerUnit := common.QuotaPerUnit
 	oldDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType

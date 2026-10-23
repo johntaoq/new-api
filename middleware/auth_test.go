@@ -320,6 +320,10 @@ func TestUserAuthAppliesAccessTokenRouteRules(t *testing.T) {
 	require.NoError(t, model.DB.Model(admin).Update("role", common.RoleAdminUser).Error)
 	profile, _ := createMiddlewareScopedToken(t, admin.Id, 0, "profile:read")
 	channel, _ := createMiddlewareScopedToken(t, admin.Id, time.Now().Unix()+3600, "channel:read")
+	logs, _ := createMiddlewareScopedToken(t, admin.Id, 0, "log:read")
+	ownLogs, _ := createMiddlewareScopedToken(t, admin.Id, 0, "usage:read")
+	user := createMiddlewarePATUser(t, "log-detail-user", "")
+	userLogs, _ := createMiddlewareScopedToken(t, user.Id, 0, "log:read", "usage:read")
 	expired, _ := createMiddlewareScopedToken(t, admin.Id, time.Now().Unix()-1, "profile:read")
 
 	ok := func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"id": c.GetInt("id")}) }
@@ -329,6 +333,8 @@ func TestUserAuthAppliesAccessTokenRouteRules(t *testing.T) {
 	router.GET("/api/undeclared", UserAuth(), ok)
 	router.GET("/api/channel/", AdminAuth(), RequirePermission(authz.ChannelRead), ok)
 	router.GET("/api/pricing", TryUserAuth(), ok)
+	router.GET("/api/log/detail", AdminAuth(), ok)
+	router.GET("/api/log/self/detail", UserAuth(), ok)
 
 	for _, test := range []struct {
 		name, path, token, code, reason string
@@ -340,6 +346,11 @@ func TestUserAuthAppliesAccessTokenRouteRules(t *testing.T) {
 		{name: "session route", path: "/api/user/access_tokens", token: profile, status: http.StatusForbidden, code: "AUTH_SESSION_REQUIRED", reason: "session_required"},
 		{name: "permission route with its scope", path: "/api/channel/", token: channel, status: http.StatusOK},
 		{name: "permission route without its scope", path: "/api/channel/", token: profile, status: http.StatusForbidden, code: "ACCESS_TOKEN_SCOPE_DENIED", reason: "scope_denied"},
+		{name: "admin log detail scope", path: "/api/log/detail", token: logs, status: http.StatusOK},
+		{name: "admin log detail requires log scope", path: "/api/log/detail", token: ownLogs, status: http.StatusForbidden, code: "ACCESS_TOKEN_SCOPE_DENIED", reason: "scope_denied"},
+		{name: "self log detail scope", path: "/api/log/self/detail", token: ownLogs, status: http.StatusOK},
+		{name: "self log detail requires usage scope", path: "/api/log/self/detail", token: logs, status: http.StatusForbidden, code: "ACCESS_TOKEN_SCOPE_DENIED", reason: "scope_denied"},
+		{name: "scope cannot elevate a normal user", path: "/api/log/detail", token: userLogs, status: http.StatusForbidden},
 		{name: "expired token", path: "/api/user/self", token: expired, status: http.StatusUnauthorized, code: "ACCESS_TOKEN_EXPIRED", reason: "expired"},
 		{name: "legacy token before the deadline", path: "/api/user/self", token: legacy, status: http.StatusOK},
 		{name: "legacy token on a session route", path: "/api/user/access_tokens", token: legacy, status: http.StatusForbidden, code: "AUTH_SESSION_REQUIRED", reason: "session_required"},

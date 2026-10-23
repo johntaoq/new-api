@@ -179,14 +179,72 @@ func TestAdminUserRiskOperationsRequireProofBeforeMutation(t *testing.T) {
 			response := adminUserRequest(test.method, test.path, body, "", identity, common.RoleRootUser, params, test.handler)
 			var result securityEnrollmentResponse
 			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
-			assert.Equal(t, http.StatusForbidden, response.Code)
-			assert.Equal(t, "SECURITY_PROOF_REQUIRED", result.Code)
+			if test.name == "password reset" {
+				assert.Equal(t, http.StatusOK, response.Code)
+				assert.False(t, result.Success)
+				assert.Equal(t, "Use the separate password reset action", result.Message)
+			} else {
+				assert.Equal(t, http.StatusForbidden, response.Code)
+				assert.Equal(t, "SECURITY_PROOF_REQUIRED", result.Code)
+			}
 			test.unchanged(t, target)
 			var flows int64
 			require.NoError(t, model.DB.Model(&model.AuthFlow{}).Count(&flows).Error)
 			assert.Zero(t, flows)
 		})
 	}
+}
+
+func TestAdminUserSeparatePasswordReset(t *testing.T) {
+	operator, identity, target := setupAdminUserTest(t)
+	require.NoError(t, model.DB.Model(target).Updates(map[string]any{
+		"quota": 1500000, "paid_quota": 1000000, "gift_quota": 500000,
+	}).Error)
+	require.NoError(t, model.PublishUserAuthCache(target.Id))
+	session, err := service.CreateLoginSession(target.Id, "password", "127.0.0.1", "managed-session")
+	require.NoError(t, err)
+	targetIdentity, err := service.ParseAccessToken(session.AccessToken)
+	require.NoError(t, err)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(target.Id)}}
+	send := func(body string) securityEnrollmentResponse {
+		response := adminUserRequest(http.MethodPost, "/api/user/:id/password", body, "", identity, common.RoleRootUser, params, ResetManagedUserPassword)
+		return decodeSecurityEnrollmentResponse(t, response)
+	}
+	for _, body := range []string{
+		`{"password":"replacement-pass","confirm_password":"replacement-pass"}`,
+		`{"password":"replacement-pass","confirm_password":"different-pass","confirmed":true}`,
+		`{"password":"short","confirm_password":"short","confirmed":true}`,
+	} {
+		assert.False(t, send(body).Success)
+	}
+	assert.True(t, send(`{"password":"replacement-pass","confirm_password":"replacement-pass","confirmed":true}`).Success)
+	stored, err := model.GetUserById(target.Id, true)
+	require.NoError(t, err)
+	assert.True(t, common.ValidatePasswordAndHash("replacement-pass", stored.Password))
+	assert.False(t, common.ValidatePasswordAndHash("managed-password", stored.Password))
+	assert.Equal(t, 1500000, stored.Quota)
+	assert.Equal(t, 1000000, stored.PaidQuota)
+	assert.Equal(t, 500000, stored.GiftQuota)
+	assert.Equal(t, target.Username, stored.Username)
+	assert.Greater(t, stored.AuthVersion, target.AuthVersion)
+	_, _, err = service.ValidateLoginSession(targetIdentity)
+	assert.Error(t, err)
+	var audit model.AuditLog
+	require.NoError(t, model.LOG_DB.Where("action = ?", "user.password_reset").Last(&audit).Error)
+	raw, err := common.Marshal(audit)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "replacement-pass")
+	assert.NotContains(t, string(raw), stored.Password)
+	assert.False(t, send(`{"password":"replacement-pass","confirm_password":"replacement-pass","confirmed":true}`).Success)
+
+	// A stale caller context cannot override the current operator role in storage.
+	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser} {
+		require.NoError(t, model.DB.Model(operator).Update("role", role).Error)
+		require.NoError(t, model.DB.Model(target).Update("role", common.RoleAdminUser).Error)
+		assert.False(t, send(`{"password":"another-new-pass","confirm_password":"another-new-pass","confirmed":true}`).Success)
+	}
+	require.NoError(t, model.DB.Model(target).Update("role", common.RoleCommonUser).Error)
+	assert.True(t, send(`{"password":"another-new-pass","confirm_password":"another-new-pass","confirmed":true}`).Success)
 }
 
 // An administrator (not root) exercises the routine paths without touching the

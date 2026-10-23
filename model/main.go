@@ -376,6 +376,15 @@ func migrateDB() error {
 		&CasbinRule{},
 		&AuthzRole{},
 		&UserAccessToken{},
+		&UserQuotaFunding{},
+		&UserBalanceLedger{},
+		&FinancialAuditLog{},
+		&ChannelCostLedger{},
+		&ChannelCostAllocation{},
+		&CustomerMonthlyStatement{},
+		&CustomerMonthlyStatementItem{},
+		&ChannelMonthlyStatement{},
+		&ChannelMonthlyStatementItem{},
 	)
 	if err != nil {
 		return err
@@ -398,7 +407,10 @@ func migrateDB() error {
 			return err
 		}
 	}
-	return nil
+	if err := DB.AutoMigrate(FinanceMonthlyModels()...); err != nil {
+		return err
+	}
+	return BackfillLegacyQuotaFunding()
 }
 
 func migrateLOGDB() error {

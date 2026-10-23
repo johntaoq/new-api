@@ -60,7 +60,7 @@ import {
   decodeBillingExprB64,
   getTieredBillingSummary,
   hasAnyCacheTokens,
-  parseLogOther,
+  parseUsageLogOther,
   isViolationFeeLog,
   logTokenName,
   renderAuditContent,
@@ -73,7 +73,7 @@ import {
   isPerCallBilling,
 } from '../../lib/utils'
 import type { LogOtherData } from '../../types'
-import { DetailsDialog } from '../dialogs/details-dialog'
+import { LazyDetailsDialog } from '../dialogs/lazy-details-dialog'
 import { LogCostDisplay } from '../log-cost-display'
 import { ModelBadge } from '../model-badge'
 import { TimingMetricsCell, StreamTpsCell } from '../timing-metrics-cell'
@@ -398,7 +398,7 @@ export function useCommonLogsColumns(
 
             if (!isDisplayableLogType(log.type)) return null
 
-            const other = parseLogOther(log.other)
+            const other = parseUsageLogOther(log)
             const affinity = other?.admin_info?.channel_affinity
             const rawUseChannel = other?.admin_info?.use_channel ?? []
             const useChannel = Array.isArray(rawUseChannel)
@@ -617,7 +617,7 @@ export function useCommonLogsColumns(
         const tokenName = logTokenName(log, t)
         if (!tokenName) return null
 
-        const other = parseLogOther(log.other)
+        const other = parseUsageLogOther(log)
         const displayName = sensitiveVisible ? tokenName : '••••'
         let group = log.group
         if (!group) group = other?.group || ''
@@ -698,7 +698,7 @@ export function useCommonLogsColumns(
           if (!isTimingLogType(log.type)) return null
 
           const useTime = row.getValue('use_time') as number
-          const other = parseLogOther(log.other)
+          const other = parseUsageLogOther(log)
           const tokensPerSecond =
             useTime > 0 && log.completion_tokens > 0
               ? log.completion_tokens / useTime
@@ -723,7 +723,7 @@ export function useCommonLogsColumns(
           const log = row.original
           if (!isDisplayableLogType(log.type)) return null
 
-          const other = parseLogOther(log.other)
+          const other = parseUsageLogOther(log)
 
           const promptTokens = log.prompt_tokens || 0
           const completionTokens = log.completion_tokens || 0
@@ -771,7 +771,7 @@ export function useCommonLogsColumns(
           if (!isDisplayableLogType(log.type)) return null
 
           const quota = row.getValue('quota') as number
-          const other = parseLogOther(log.other)
+          const other = parseUsageLogOther(log)
           return (
             <LogCostDisplay
               quota={quota}
@@ -790,7 +790,7 @@ export function useCommonLogsColumns(
           if (!isTimingLogType(log.type)) return null
 
           const useTime = row.getValue('use_time') as number
-          const other = parseLogOther(log.other)
+          const other = parseUsageLogOther(log)
 
           return (
             <TimingMetricsCell
@@ -810,10 +810,11 @@ export function useCommonLogsColumns(
           const { t, i18n } = useTranslation()
           const [dialogOpen, setDialogOpen] = useState(false)
           const log = row.original
-          const other = parseLogOther(log.other)
+          const other = parseUsageLogOther(log)
 
           const pricingData = usePricingData(
-            log.type === 2 &&
+            !log.summary &&
+              log.type === 2 &&
               other?.is_task === true &&
               other.billing_mode === 'tiered_expr'
           )
@@ -876,13 +877,15 @@ export function useCommonLogsColumns(
               >
                 {detailPreview}
               </button>
-              <DetailsDialog
-                log={log}
-                isAdmin={isAdmin}
-                isRoot={isRoot}
-                open={dialogOpen}
-                onOpenChange={setDialogOpen}
-              />
+              {dialogOpen && (
+                <LazyDetailsDialog
+                  log={log}
+                  isAdmin={isAdmin}
+                  isRoot={isRoot}
+                  open={dialogOpen}
+                  onOpenChange={setDialogOpen}
+                />
+              )}
             </>
           )
         },

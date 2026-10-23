@@ -22,21 +22,32 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { createInstance } from 'i18next'
+import { StrictMode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { afterAll, afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import en from '@/i18n/locales/en.json'
 import zh from '@/i18n/locales/zh.json'
+import { api } from '@/lib/api'
 import {
   DEFAULT_CURRENCY_CONFIG,
   useSystemConfigStore,
 } from '@/stores/system-config-store'
 
+import { getAllLogs, getLogDetail, getUserLogs } from '../../api'
 import type { UsageLog } from '../../data/schema'
 import type { LogOtherData } from '../../types'
 import { useCommonLogsColumns } from '../columns/common-logs-columns'
+import { LazyDetailsDialog } from '../dialogs/lazy-details-dialog'
 
 vi.mock('@lobehub/icons', () => ({}))
 vi.hoisted(() => {
@@ -78,9 +89,10 @@ function DetailPreview(props: {
   other: LogOtherData
   isAdmin: boolean
   type?: number
+  log?: UsageLog
 }) {
   const table = useReactTable({
-    data: [makeLog(props.other, props.type)],
+    data: [props.log ?? makeLog(props.other, props.type)],
     columns: useCommonLogsColumns(props.isAdmin, false),
     getCoreRowModel: getCoreRowModel(),
   })
@@ -97,6 +109,145 @@ const plugin = {
   version: '1.0.1',
   author: { name: 'Plugin maintainer' },
 }
+
+const originalAdapter = api.defaults.adapter
+
+test('a fresh detail request does not inherit cancellation from an earlier request', async () => {
+  const full = makeLog({ model_price: 0.25 })
+  const log = { ...full, detail_id: 41, summary: true }
+  api.defaults.adapter = async (config) => ({
+    data: { success: true, data: full },
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    config,
+  })
+  const canceled = new AbortController()
+  const first = getLogDetail(log, true, canceled.signal).catch(
+    (error: unknown) => error
+  )
+  canceled.abort()
+
+  await expect(
+    getLogDetail(log, true, new AbortController().signal)
+  ).resolves.toEqual(full)
+  expect(await first).toMatchObject({ code: 'ERR_CANCELED' })
+})
+
+test('a first-open detail in StrictMode loads without requiring Retry', async () => {
+  const full = makeLog({ model_price: 0.25 })
+  const log = { ...full, detail_id: 41, summary: true }
+  api.defaults.adapter = async (config) => ({
+    data: { success: true, data: full },
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    config,
+  })
+  render(
+    <StrictMode>
+      <QueryClientProvider client={client}>
+        <I18nextProvider i18n={i18n}>
+          <LazyDetailsDialog
+            log={log}
+            isAdmin
+            isRoot={false}
+            open
+            onOpenChange={() => undefined}
+          />
+        </I18nextProvider>
+      </QueryClientProvider>
+    </StrictMode>
+  )
+
+  expect(await screen.findByText('Request ID')).toBeVisible()
+  expect(screen.queryByText('Failed to load logs')).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Retry' })
+  ).not.toBeInTheDocument()
+})
+
+test('summary lists request the lightweight API without an admin redirect', async () => {
+  const get = vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: { items: [], total: 0 } },
+  })
+  await getAllLogs({ page_size: 100 })
+  await getUserLogs({ page_size: 20 })
+  expect(get.mock.calls[0][0]).toBe('/api/log/?p=1&page_size=100&summary=true')
+  expect(get.mock.calls[1][0]).toBe(
+    '/api/log/self?p=1&page_size=20&summary=true'
+  )
+})
+
+test('summary rows fetch details only on click and reuse the opened detail', async () => {
+  const other = { model_price: 0.25, admin_info: { task_plugin: plugin } }
+  const log = { ...makeLog(other), detail_id: 41, summary: true }
+  let resolve: (value: {
+    data: { success: boolean; data: UsageLog }
+  }) => void = () => undefined
+  const get = vi.spyOn(api, 'get').mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done
+      })
+  )
+  render(
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>
+        <DetailPreview other={other} log={log} isAdmin />
+      </I18nextProvider>
+    </QueryClientProvider>
+  )
+  expect(get).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByTitle('Click to view full details'))
+  expect(await screen.findByText('Loading...')).toBeVisible()
+  expect(get).toHaveBeenCalledTimes(1)
+  expect(get.mock.calls[0][0]).toBe(
+    '/api/log/detail?id=41&request_id=req-1&created_at=1&type=2'
+  )
+  await act(async () => {
+    resolve({ data: { success: true, data: makeLog(other) } })
+  })
+  expect(
+    await screen.findByText('Incho', {}, { timeout: 15_000 })
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  )
+  fireEvent.click(screen.getByTitle('Click to view full details'))
+  expect(await screen.findByText('Incho')).toBeVisible()
+  expect(get).toHaveBeenCalledTimes(1)
+})
+
+test('owner details use the self endpoint and can retry a failed request', async () => {
+  const other = { model_price: 0.25 }
+  const log = { ...makeLog(other), detail_id: 41, summary: true }
+  const get = vi
+    .spyOn(api, 'get')
+    .mockResolvedValueOnce({
+      data: { success: false, message: 'Failed to query logs' },
+    })
+    .mockResolvedValueOnce({ data: { success: true, data: makeLog(other) } })
+  render(
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>
+        <DetailPreview other={other} log={log} isAdmin={false} />
+      </I18nextProvider>
+    </QueryClientProvider>
+  )
+  fireEvent.click(screen.getByTitle('Click to view full details'))
+  expect(await screen.findByText('Failed to load logs')).toBeVisible()
+  expect(get).toHaveBeenCalledTimes(1)
+  expect(get.mock.calls[0][0]).toContain('/api/log/self/detail?')
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  await waitFor(() =>
+    expect(screen.queryByText('Failed to load logs')).not.toBeInTheDocument()
+  )
+  expect(await screen.findByText('Request ID')).toBeVisible()
+  expect(get).toHaveBeenCalledTimes(2)
+})
 const previousConfig = useSystemConfigStore.getState().config
 let client: QueryClient
 const i18n = createInstance()
@@ -118,6 +269,8 @@ beforeEach(async () => {
   )
 })
 afterEach(() => {
+  vi.restoreAllMocks()
+  api.defaults.adapter = originalAdapter
   client.clear()
   useSystemConfigStore.getState().setConfig(previousConfig)
 })
@@ -133,6 +286,7 @@ function renderPreview(other: LogOtherData, isAdmin = true, type?: number) {
 }
 
 test('keeps log details open when the parent refreshes with unchanged data', async () => {
+  const get = vi.spyOn(api, 'get')
   const other = { model_price: 0.25 }
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <I18nextProvider i18n={i18n}>
@@ -146,6 +300,7 @@ test('keeps log details open when the parent refreshes with unchanged data', asy
   expect(await screen.findByRole('dialog')).toBeVisible()
   rerender(<DetailPreview other={other} isAdmin />)
   expect(screen.getByRole('dialog')).toBeVisible()
+  expect(get).not.toHaveBeenCalled()
 })
 
 test.each([
@@ -338,7 +493,7 @@ test.each([true, false])(
     fireEvent.click(preview)
     const dialog = within(await screen.findByRole('dialog'))
     if (isAdmin) {
-      expect(dialog.getByText('Incho')).toBeVisible()
+      expect(await dialog.findByText('Incho')).toBeVisible()
       expect(dialog.getByText('1.0.1')).toBeVisible()
       expect(dialog.getByText('Plugin maintainer')).toBeVisible()
     } else {

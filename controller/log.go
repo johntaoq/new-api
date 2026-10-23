@@ -20,6 +20,7 @@ func logFilterFromQuery(c *gin.Context, admin bool) model.LogFilter {
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	filter := model.LogFilter{
+		Summary:           c.Query("summary") == "true",
 		Type:              logType,
 		StartTimestamp:    startTimestamp,
 		EndTimestamp:      endTimestamp,
@@ -66,6 +67,9 @@ func GetAllLogs(c *gin.Context) {
 	} else {
 		model.FormatRootLogs(logs)
 	}
+	if c.Query("summary") == "true" {
+		model.SummarizeLogs(logs)
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
@@ -88,10 +92,79 @@ func GetUserLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if filter.Summary {
+		model.SummarizeLogs(logs)
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
 	return
+}
+
+func GetAllLogDetail(c *gin.Context) {
+	getLogDetail(c, true)
+}
+
+func GetUserLogDetail(c *gin.Context) {
+	getLogDetail(c, false)
+}
+
+func getLogDetail(c *gin.Context, all bool) {
+	c.Header("Cache-Control", "private, no-store")
+	id, err := strconv.Atoi(c.Query("id"))
+	requestId := c.Query("request_id")
+	if (c.Query("id") != "" && (err != nil || id <= 0)) || len(requestId) > 64 ||
+		(id <= 0 && requestId == "") ||
+		(common.UsingLogDatabase(common.DatabaseTypeClickHouse) && requestId == "") {
+		common.ApiErrorT(c, "Failed to query logs")
+		return
+	}
+	filter := model.LogFilter{RequestId: requestId}
+	if value := c.Query("type"); value != "" {
+		filter.Type, err = strconv.Atoi(value)
+		if err != nil || filter.Type < model.LogTypeUnknown || filter.Type > model.LogTypeLogin {
+			common.ApiErrorT(c, "Failed to query logs")
+			return
+		}
+	}
+	if value := c.Query("created_at"); value != "" {
+		filter.StartTimestamp, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || filter.StartTimestamp <= 0 {
+			common.ApiErrorT(c, "Failed to query logs")
+			return
+		}
+		filter.EndTimestamp = filter.StartTimestamp
+	}
+	userId := 0
+	if !all {
+		userId = c.GetInt("id")
+		if userId <= 0 {
+			common.ApiErrorT(c, "Failed to query logs")
+			return
+		}
+		if c.GetInt("role") < common.RoleAdminUser {
+			oldest, err := limitLogTimeRange(0, 0)
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			filter.StartTimestamp = max(filter.StartTimestamp, oldest)
+		}
+	}
+	log, err := model.GetLogDetail(c.Request.Context(), id, filter, userId)
+	if err != nil {
+		common.ApiErrorT(c, "Failed to query logs")
+		return
+	}
+	logs := []*model.Log{log}
+	if !all {
+		model.FormatUserLogDetail(log)
+	} else if c.GetInt("role") < common.RoleRootUser {
+		model.FormatAdminLogs(logs)
+	} else {
+		model.FormatRootLogs(logs)
+	}
+	common.ApiSuccess(c, log)
 }
 
 // ExportAllLogs streams every user's logs matching the search.

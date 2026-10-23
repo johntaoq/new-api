@@ -17,7 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api, getFreshAuthHeaders, type ApiRequestConfig } from '@/lib/api'
-import { createServerError } from '@/lib/server-error-message'
+import {
+  createServerError,
+  requireServerSuccess,
+} from '@/lib/server-error-message'
 
 import type { UsageLog } from './data/schema'
 import { buildQueryParams } from './lib/query-params'
@@ -51,9 +54,11 @@ async function fetchLogs<T>(
     p: paramRecord.p || 1,
     page_size: paramRecord.page_size || 20,
     ...params,
+    ...(endpoint === '/api/log' ? { summary: true } : {}),
   })
   const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}?${queryParams}`)
+  const listPath = endpoint === '/api/log' && isAdmin ? `${path}/` : path
+  const res = await api.get(`${listPath}?${queryParams}`)
   return res.data
 }
 
@@ -80,6 +85,34 @@ export const getAllLogs = (params: GetLogsParams = {}) =>
 export const getUserLogs = (
   params: Omit<GetLogsParams, 'username' | 'channel'> = {}
 ) => fetchLogs('/api/log', params, false)
+
+export async function getLogDetail(
+  log: UsageLog,
+  isAdmin: boolean,
+  signal?: AbortSignal
+): Promise<UsageLog> {
+  const query = buildQueryParams({
+    id: log.detail_id,
+    request_id: log.request_id,
+    created_at: log.created_at,
+    type: log.type,
+  })
+  const response = await api.get<{
+    success: boolean
+    data?: UsageLog
+  }>(`${buildApiPath('/api/log', isAdmin)}/detail?${query}`, {
+    signal,
+    // React Query owns deduplication; each fetch must keep its own abort signal.
+    disableDuplicate: true,
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  } satisfies ApiRequestConfig)
+  const result = requireServerSuccess(response.data)
+  if (!result.data || result.success !== true) {
+    throw createServerError(result)
+  }
+  return result.data
+}
 
 export const getLogStats = (params: GetLogStatsParams = {}) =>
   fetchLogStats('/api/log', params, true)

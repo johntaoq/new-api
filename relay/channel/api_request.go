@@ -536,6 +536,14 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	// transparent stream retries.
 	relayClient := *client
 	relayClient.CheckRedirect = keepUpstreamRedirectResponse
+	if common2.ImageRelayTimeout > 0 &&
+		(info.RelayMode == constant.RelayModeImagesGenerations || info.RelayMode == constant.RelayModeImagesEdits) {
+		// Preserve the production image deadline without limiting text streams.
+		timeout := time.Duration(min(int64(common2.ImageRelayTimeout), int64((1<<63-1)/time.Second))) * time.Second
+		if relayClient.Timeout == 0 || timeout < relayClient.Timeout {
+			relayClient.Timeout = timeout
+		}
+	}
 	if common2.DebugEnabled && req != nil && req.URL != nil {
 		policy := service.NormalizeHTTPTransportPolicy(info.ChannelSetting)
 		logger.LogDebug(c, "http transport select: host=%s protocol=%s shards=%d policy=%s",

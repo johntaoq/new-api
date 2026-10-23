@@ -59,6 +59,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
   },
   admin: {
     enabled: true,
+    finance: true,
     channel: true,
     models: true,
     redemption: true,
@@ -97,6 +98,7 @@ const mergeWithDefaultSidebarModules = (
  * Mapping from URL to configuration keys
  */
 const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
+  '/finance': { section: 'admin', module: 'finance' },
   '/playground': { section: 'chat', module: 'playground' },
   '/dashboard': { section: 'console', module: 'detail' },
   '/dashboard/overview': { section: 'console', module: 'detail' },

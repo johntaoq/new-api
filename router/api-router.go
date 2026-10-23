@@ -164,6 +164,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.POST("/", controller.CreateUser)
 				adminRoute.POST("/manage", controller.ManageUser)
 				adminRoute.PUT("/", controller.UpdateUser)
+				adminRoute.POST("/:id/password", middleware.DisableCache(), controller.ResetManagedUserPassword)
 				adminRoute.DELETE("/:id", controller.DeleteUser)
 				adminRoute.DELETE("/:id/reset_passkey", controller.AdminResetPasskey)
 
@@ -305,6 +306,7 @@ func SetApiRouter(router *gin.Engine) {
 			}
 		}
 
+		setFinanceRoutes(apiRouter)
 		redemptionRoute := apiRouter.Group("/redemption")
 		redemptionRoute.Use(middleware.AdminAuth())
 		{
@@ -321,6 +323,8 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/audit/self", middleware.DisableCache(), middleware.UserAuth(), controller.GetAuditLogs)
 		logRoute := apiRouter.Group("/log")
 		logRoute.GET("/", middleware.AdminAuth(), controller.GetAllLogs)
+		logRoute.GET("/detail", middleware.AdminAuth(), controller.GetAllLogDetail)
+		logRoute.GET("/self/detail", middleware.UserAuth(), controller.GetUserLogDetail)
 		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)

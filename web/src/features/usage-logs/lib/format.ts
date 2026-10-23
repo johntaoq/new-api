@@ -170,6 +170,19 @@ export function parseLogOther(other: string): LogOtherData | null {
   }
 }
 
+const parsedLogOther = new WeakMap<
+  UsageLog,
+  { source: string; value: LogOtherData | null }
+>()
+
+export function parseUsageLogOther(log: UsageLog): LogOtherData | null {
+  const cached = parsedLogOther.get(log)
+  if (cached?.source === log.other) return cached.value
+  const value = parseLogOther(log.other)
+  parsedLogOther.set(log, { source: log.other, value })
+  return value
+}
+
 export function getReasoningEffortVariant(
   effort: string | undefined
 ): StatusBadgeProps['variant'] {
@@ -242,7 +255,7 @@ export function formatModelName(log: UsageLog): {
   actualModel?: string
   responseModel?: LogOtherData['response_model']
 } {
-  const other = parseLogOther(log.other)
+  const other = parseUsageLogOther(log)
   const isMapped = !!(
     other?.is_model_mapped &&
     other?.upstream_model_name &&

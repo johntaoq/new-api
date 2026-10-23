@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { WalletMonthlyStatements } from '@/features/finance/components/wallet-statements'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
@@ -46,6 +47,9 @@ import {
   getDefaultPaymentType,
   getMinTopupAmount,
   dispatchSelectedPayment,
+  isStripePayment,
+  isWaffoPayment,
+  isWaffoPancakePayment,
 } from './lib'
 import type {
   UserWalletData,
@@ -64,6 +68,7 @@ export function Wallet(props: WalletProps) {
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
   const [topupAmount, setTopupAmount] = useState(0)
+  const [topupCurrency, setTopupCurrency] = useState<'CNY' | 'USD'>('CNY')
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState<PaymentMethod>()
@@ -96,7 +101,7 @@ export function Wallet(props: WalletProps) {
     processing,
     calculatePaymentAmount,
     processPayment,
-  } = usePayment()
+  } = usePayment(topupCurrency)
   const {
     affiliateLink,
     loading: affiliateLoading,
@@ -154,6 +159,35 @@ export function Wallet(props: WalletProps) {
   const getCurrentPaymentType = useCallback(() => {
     return selectedPaymentMethod?.type || getDefaultPaymentType(topupInfo)
   }, [selectedPaymentMethod, topupInfo])
+  const currentPaymentType = getCurrentPaymentType()
+  const regularPayment =
+    !isStripePayment(currentPaymentType) &&
+    !isWaffoPayment(currentPaymentType) &&
+    !isWaffoPancakePayment(currentPaymentType)
+  const inputCurrency =
+    regularPayment && topupInfo?.enable_online_topup ? topupCurrency : 'USD'
+  const minimum =
+    regularPayment && topupInfo?.enable_online_topup
+      ? Math.ceil(
+          (topupInfo.min_topup_cny ?? 10) /
+            (inputCurrency === 'USD' ? topupInfo.recharge_rate || 1 : 1)
+        )
+      : getMinTopupAmount(topupInfo)
+  let presetPriceRatio = (status?.price as number) || 1
+  if (regularPayment) {
+    presetPriceRatio =
+      inputCurrency === 'CNY' ? 1 : topupInfo?.recharge_rate || 1
+  }
+
+  useEffect(() => {
+    if (topupInfo) void calculatePaymentAmount(topupAmount, currentPaymentType)
+  }, [
+    topupCurrency,
+    topupInfo,
+    topupAmount,
+    currentPaymentType,
+    calculatePaymentAmount,
+  ])
 
   // Handle preset selection
   const handleSelectPreset = (preset: PresetAmount) => {
@@ -177,7 +211,16 @@ export function Wallet(props: WalletProps) {
 
     try {
       // Validate minimum topup
-      const minTopup = getMinTopupAmount(topupInfo)
+      const methodIsRegular =
+        !isStripePayment(method.type) &&
+        !isWaffoPayment(method.type) &&
+        !isWaffoPancakePayment(method.type)
+      const minTopup = methodIsRegular
+        ? Math.ceil(
+            (topupInfo?.min_topup_cny ?? 10) /
+              (topupCurrency === 'USD' ? topupInfo?.recharge_rate || 1 : 1)
+          )
+        : method.min_topup || getMinTopupAmount(topupInfo)
       if (topupAmount < minTopup) {
         return
       }
@@ -289,6 +332,7 @@ export function Wallet(props: WalletProps) {
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
             <WalletStatsCard user={user} loading={userLoading} />
+            <WalletMonthlyStatements />
 
             <div
               className={
@@ -300,6 +344,12 @@ export function Wallet(props: WalletProps) {
               <div id='wallet-add-funds' className='scroll-mt-4'>
                 <RechargeFormCard
                   topupInfo={topupInfo}
+                  topupCurrency={inputCurrency}
+                  onCurrencyChange={setTopupCurrency}
+                  currencySelectable={
+                    regularPayment && !!topupInfo?.enable_online_topup
+                  }
+                  minimumAmount={minimum}
                   presetAmounts={presetAmounts}
                   selectedPreset={selectedPreset}
                   onSelectPreset={handleSelectPreset}
@@ -315,8 +365,10 @@ export function Wallet(props: WalletProps) {
                   redeeming={redeeming}
                   topupLink={topupInfo?.topup_link}
                   loading={topupLoading}
-                  priceRatio={(status?.price as number) || 1}
-                  usdExchangeRate={effectiveUsdExchangeRate}
+                  priceRatio={presetPriceRatio}
+                  usdExchangeRate={
+                    regularPayment ? 1 : effectiveUsdExchangeRate
+                  }
                   onOpenBilling={() => setBillingDialogOpen(true)}
                   creemProducts={topupInfo?.creem_products}
                   enableCreemTopup={topupInfo?.enable_creem_topup}
@@ -357,6 +409,7 @@ export function Wallet(props: WalletProps) {
         onOpenChange={setConfirmDialogOpen}
         onConfirm={handlePaymentConfirm}
         topupAmount={topupAmount}
+        inputCurrency={inputCurrency}
         paymentAmount={paymentAmount}
         paymentMethod={selectedPaymentMethod}
         calculating={calculating}

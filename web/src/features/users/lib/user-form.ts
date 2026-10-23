@@ -23,11 +23,11 @@ import {
   type AdminPermissionMatrix,
   normalizeAdminPermissions,
 } from '@/lib/admin-permissions'
-import { quotaUnitsToDollars } from '@/lib/format'
+import { accountPasswordSchema } from '@/lib/password-policy'
 import { ROLE } from '@/lib/roles'
 
 import { DEFAULT_GROUP } from '../constants'
-import { type UserFormData, type User } from '../types'
+import type { UserFormData, User } from '../types'
 
 // ============================================================================
 // Form Schema
@@ -38,7 +38,6 @@ export const userFormSchema = z.object({
   display_name: z.string().optional(),
   password: z.string().optional(),
   role: z.number().optional(),
-  quota_dollars: z.number().min(0).optional(),
   group: z.string().optional(),
   remark: z.string().optional(),
   admin_permissions: z
@@ -47,6 +46,17 @@ export const userFormSchema = z.object({
 })
 
 export type UserFormValues = z.infer<typeof userFormSchema>
+
+export const resetUserPasswordSchema = z
+  .object({
+    password: accountPasswordSchema,
+    confirm_password: z.string(),
+  })
+  .refine((value) => value.password === value.confirm_password, {
+    message: 'Password confirmation does not match',
+    path: ['confirm_password'],
+  })
+export type ResetUserPasswordValues = z.infer<typeof resetUserPasswordSchema>
 
 // ============================================================================
 // Form Defaults
@@ -57,7 +67,6 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   display_name: '',
   password: '',
   role: 1, // Default to common user
-  quota_dollars: 0,
   group: DEFAULT_GROUP,
   remark: '',
   // Filled against the backend catalog at render time; see UsersMutateDrawer.
@@ -79,7 +88,6 @@ export function transformFormDataToPayload(
   const payload: UserFormData & { id?: number } = {
     username: data.username,
     display_name: data.display_name || data.username,
-    password: data.password || undefined,
   }
 
   const role = userId === undefined ? data.role || 1 : (data.role ?? 0)
@@ -96,9 +104,10 @@ export function transformFormDataToPayload(
 
   // For create: only send required fields
   if (userId === undefined) {
+    payload.password = data.password || undefined
     payload.role = role
   } else {
-    // For update: quota is adjusted atomically via /api/user/manage, not sent here
+    // Wallet adjustments use /api/user/:id/quota_adjust; do not override balances here.
     payload.group = data.group
     payload.remark = data.remark || undefined
     payload.id = userId
@@ -118,7 +127,6 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     display_name: user.display_name,
     password: '',
     role: user.role,
-    quota_dollars: quotaUnitsToDollars(user.quota),
     group: user.group || DEFAULT_GROUP,
     remark: user.remark || '',
     admin_permissions: user.admin_permissions ?? {},

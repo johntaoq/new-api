@@ -510,6 +510,8 @@ func buildSelfUserData(user *model.User) map[string]any {
 		"telegram_id":       user.TelegramId,
 		"group":             user.Group,
 		"quota":             user.Quota,
+		"paid_quota":        user.PaidQuota,
+		"gift_quota":        user.GiftQuota,
 		"used_quota":        user.UsedQuota,
 		"request_count":     user.RequestCount,
 		"aff_code":          user.AffCode,
@@ -681,13 +683,16 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 	updatePassword := updatedUser.Password != ""
+	if updatePassword {
+		common.ApiErrorT(c, "Use the separate password reset action")
+		return
+	}
 	auditParams := map[string]any{
 		"username": originUser.Username,
 		"id":       updatedUser.Id,
 	}
-	// Resetting a password or rewriting the admin permission matrix changes what
-	// the managed account can do or who can sign in to it.
-	if updatePassword || updatedUser.AdminPermissions != nil {
+	// Permission changes retain their existing verification flow.
+	if updatedUser.AdminPermissions != nil {
 		authorization := requireAdminUserProof(c, service.VerificationScopeAdminUserUpdate, service.AdminUserContext{UserID: updatedUser.Id})
 		if authorization == nil {
 			return

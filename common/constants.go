@@ -170,6 +170,8 @@ var BatchUpdateInterval int
 
 var RelayTimeout int // unit is second
 
+var ImageRelayTimeout int // unit is second; zero disables the image-only deadline
+
 var RelayIdleConnTimeout int // unit is second
 
 // RelayResponseHeaderTimeout limits how long the relay transport waits for the
@@ -228,8 +230,11 @@ var (
 	GlobalStaticRateLimitDuration int64
 
 	CriticalRateLimitEnable   bool
-	CriticalRateLimitNum            = 20
-	CriticalRateLimitDuration int64 = 20 * 60
+	CriticalRateLimitNum            = 6000
+	CriticalRateLimitDuration int64 = 180
+
+	UserCriticalRateLimitNum            = 3000
+	UserCriticalRateLimitDuration int64 = 180
 
 	UploadRateLimitNum            = 10
 	UploadRateLimitDuration int64 = 60

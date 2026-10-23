@@ -18,12 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { Pencil } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   SideDrawerSection,
   sideDrawerContentClassName,
@@ -71,8 +71,6 @@ import {
   normalizeAdminPermissions,
   type AdminPermissionMatrix,
 } from '@/lib/admin-permissions'
-import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
-import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { accountPasswordSchema } from '@/lib/password-policy'
 import { ROLE } from '@/lib/roles'
@@ -86,6 +84,7 @@ import {
   getUser,
   getGroups,
   getPermissionCatalog,
+  adjustUserWallet,
 } from '../api'
 import { BINDING_FIELDS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
@@ -95,8 +94,12 @@ import {
   transformFormDataToPayload,
   transformUserToFormDefaults,
 } from '../lib'
+import {
+  previewWalletAdjustments,
+  type WalletAdjustmentDraft,
+} from '../lib/wallet-adjustments'
 import type { User } from '../types'
-import { UserQuotaDialog } from './user-quota-dialog'
+import { UserWalletAdjustments } from './user-wallet-adjustments'
 import { useUsers } from './users-provider'
 
 type UsersMutateDrawerProps = {
@@ -115,7 +118,11 @@ export function UsersMutateDrawer({
   const { triggerRefresh, requestVerification } = useUsers()
   const currentUser = useAuthStore((s) => s.auth.user)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
+  const [walletUser, setWalletUser] = useState<User | null>(null)
+  const [pending, setPending] = useState<WalletAdjustmentDraft[]>([])
+  const [review, setReview] = useState<UserFormValues | null>(null)
+  const [partialFailure, setPartialFailure] = useState(false)
+  const submitting = useRef(false)
   // Matrix as loaded from the server; an unchanged matrix is not resubmitted so
   // routine edits of an administrator do not require step-up verification.
   const loadedPermissions = useRef<AdminPermissionMatrix | undefined>(undefined)
@@ -143,35 +150,53 @@ export function UsersMutateDrawer({
 
   // Load existing data when updating
   useEffect(() => {
+    let cancelled = false
+    setWalletUser(null)
+    setPending([])
+    setReview(null)
+    setPartialFailure(false)
     if (open && isUpdate && currentRow) {
       // For update, fetch fresh data
       getUser(currentRow.id)
         .then((result) => {
+          if (cancelled) return
           if (result.success && result.data) {
+            setWalletUser(result.data)
             loadedPermissions.current = result.data.admin_permissions
             form.reset(transformUserToFormDefaults(result.data))
           } else {
             handleServerError(result, t('Failed to load'))
           }
         })
-        .catch((error) => handleServerError(error, t('Failed to load')))
+        .catch((error) => {
+          if (!cancelled) handleServerError(error, t('Failed to load'))
+        })
     } else if (open && !isUpdate) {
       // For create, reset to defaults
       form.reset(USER_FORM_DEFAULT_VALUES)
     }
+    return () => {
+      cancelled = true
+    }
   }, [open, isUpdate, currentRow, form, t])
 
-  const { meta: currencyMeta } = getCurrencyDisplay()
-  const currencyLabel = getCurrencyLabel()
-  const tokensOnly = currencyMeta.kind === 'tokens'
-
-  const currentQuotaRaw = form.watch('quota_dollars') || 0
   const selectedRole = form.watch('role')
   const canEditAdminPermissions = currentUser?.role === ROLE.SUPER_ADMIN
   const targetIsAdmin = (selectedRole ?? currentRow?.role ?? 0) >= ROLE.ADMIN
 
-  const onSubmit = async (data: UserFormValues) => {
-    if (!isUpdate || data.password) {
+  const pendingValid =
+    !!walletUser && previewWalletAdjustments(walletUser, pending).valid
+
+  const onSubmit = async (data: UserFormValues, confirmed = false) => {
+    if (submitting.current) return
+    if (pending.length > 0) {
+      if (!pendingValid) return
+      if (!confirmed) {
+        setReview(data)
+        return
+      }
+    }
+    if (!isUpdate) {
       if (!accountPasswordSchema.safeParse(data.password ?? '').success) {
         form.setError('password', {
           type: 'manual',
@@ -181,6 +206,7 @@ export function UsersMutateDrawer({
       }
     }
 
+    submitting.current = true
     setIsSubmitting(true)
     try {
       const payload = transformFormDataToPayload(
@@ -201,11 +227,11 @@ export function UsersMutateDrawer({
       ) {
         delete payload.admin_permissions
       }
-      // Resetting a password, rewriting admin permissions, or creating an
+      // Rewriting admin permissions or creating an
       // administrator changes who can sign in or what they may do.
       let proofToken: string | undefined
       if (isUpdate && currentRow) {
-        if (payload.password || payload.admin_permissions) {
+        if (payload.admin_permissions) {
           const proof = await requestVerification({
             scope: 'admin.user.update',
             context: { user_id: currentRow.id },
@@ -238,6 +264,34 @@ export function UsersMutateDrawer({
         : await createUser(payload, proofToken)
 
       if (result.success) {
+        loadedPermissions.current = data.admin_permissions
+        let applied = 0
+        try {
+          for (const item of pending) {
+            if (!currentRow) {
+              throw new Error('User is required for wallet adjustments')
+            }
+            requireServerSuccess(
+              await adjustUserWallet(currentRow.id, {
+                funding_type: item.funding_type,
+                delta_quota: item.delta_quota,
+                source_type: item.source_type,
+                remark: item.remark,
+                revenue_usd: item.revenue_usd,
+              })
+            )
+            applied++
+          }
+        } catch (error) {
+          setPending(pending.slice(applied))
+          setPartialFailure(applied > 0)
+          // Refresh only balances: retain the user's profile edits and unsent drafts.
+          await refreshWalletData()
+          triggerRefresh()
+          handleServerError(error, t('Failed to adjust quota'))
+          return
+        }
+        setPending([])
         toast.success(
           isUpdate
             ? t(SUCCESS_MESSAGES.USER_UPDATED)
@@ -254,20 +308,19 @@ export function UsersMutateDrawer({
         t(ERROR_MESSAGES.UNEXPECTED)
       )
     } finally {
+      submitting.current = false
       setIsSubmitting(false)
+      setReview(null)
     }
   }
 
-  const refreshUserData = async () => {
+  const refreshWalletData = async () => {
     if (!currentRow) return
     try {
       const result = requireServerSuccess(await getUser(currentRow.id))
-      if (result.success && result.data) {
-        loadedPermissions.current = result.data.admin_permissions
-        form.reset(transformUserToFormDefaults(result.data))
-      }
-      triggerRefresh()
+      setWalletUser(result.data ?? null)
     } catch (error) {
+      setWalletUser(null)
       handleServerError(error, t('Failed to load'))
     }
   }
@@ -277,6 +330,7 @@ export function UsersMutateDrawer({
       <Sheet
         open={open}
         onOpenChange={(v) => {
+          if (submitting.current) return
           onOpenChange(v)
           if (!v) {
             form.reset()
@@ -284,7 +338,7 @@ export function UsersMutateDrawer({
         }}
       >
         <SheetContent
-          className={sideDrawerContentClassName('sm:max-w-[600px]')}
+          className={sideDrawerContentClassName('sm:max-w-[680px]')}
         >
           <SheetHeader className={sideDrawerHeaderClassName()}>
             <SheetTitle>
@@ -299,7 +353,13 @@ export function UsersMutateDrawer({
           <Form {...form}>
             <form
               id='user-form'
-              onSubmit={form.handleSubmit(onSubmit)}
+              onSubmit={form.handleSubmit(
+                (data) => onSubmit(data),
+                () =>
+                  toast.error(
+                    t('Please fix the highlighted fields before saving')
+                  )
+              )}
               className={sideDrawerFormClassName()}
             >
               {/* Basic Information */}
@@ -387,27 +447,29 @@ export function UsersMutateDrawer({
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name='password'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Password')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type='password'
-                          placeholder={
-                            isUpdate
-                              ? t('Leave empty to keep unchanged')
-                              : t('Enter password (8–128 characters)')
-                          }
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {!isUpdate && (
+                  <FormField
+                    control={form.control}
+                    name='password'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Password')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type='password'
+                            placeholder={
+                              isUpdate
+                                ? t('Leave empty to keep unchanged')
+                                : t('Enter password (8–128 characters)')
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
               </SideDrawerSection>
 
               {/* Group & Quota Settings (Update only) */}
@@ -438,44 +500,31 @@ export function UsersMutateDrawer({
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name='quota_dollars'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('Remaining Quota ({{currency}})', {
-                            currency: currencyLabel,
-                          })}
-                        </FormLabel>
-                        <div className='flex gap-2'>
-                          <FormControl>
-                            <Input
-                              value={
-                                tokensOnly
-                                  ? String(field.value || 0)
-                                  : (field.value || 0).toFixed(6)
-                              }
-                              readOnly
-                              className='flex-1'
-                            />
-                          </FormControl>
-                          <Button
-                            type='button'
-                            variant='outline'
-                            onClick={() => setQuotaDialogOpen(true)}
-                          >
-                            <Pencil className='mr-1 h-4 w-4' />
-                            {t('Adjust Quota')}
-                          </Button>
-                        </div>
-                        <FormDescription>
-                          {formatQuota(parseQuotaFromDollars(field.value || 0))}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {walletUser ? (
+                    <UserWalletAdjustments
+                      key={walletUser.id}
+                      user={walletUser}
+                      pending={pending}
+                      onChange={setPending}
+                      disabled={isSubmitting}
+                    />
+                  ) : (
+                    <Button
+                      type='button'
+                      variant='outline'
+                      onClick={refreshWalletData}
+                    >
+                      {t('Reload balances')}
+                    </Button>
+                  )}
+                  {partialFailure && (
+                    <p role='alert' className='text-destructive text-sm'>
+                      {t(
+                        'Some adjustments were submitted. Remaining: {{count}}',
+                        { count: pending.length }
+                      )}
+                    </p>
+                  )}
 
                   <FormField
                     control={form.control}
@@ -582,24 +631,46 @@ export function UsersMutateDrawer({
             </form>
           </Form>
           <SheetFooter className={sideDrawerFooterClassName()}>
-            <SheetClose render={<Button variant='outline' />}>
+            <SheetClose
+              render={<Button variant='outline' disabled={isSubmitting} />}
+            >
               {t('Close')}
             </SheetClose>
-            <Button form='user-form' type='submit' disabled={isSubmitting}>
-              {isSubmitting ? t('Saving...') : t('Save changes')}
+            <Button
+              form='user-form'
+              type='submit'
+              disabled={isSubmitting || (pending.length > 0 && !pendingValid)}
+            >
+              {isSubmitting
+                ? t('Saving...')
+                : t(pending.length > 0 ? 'Submit all changes' : 'Save changes')}
             </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
 
-      {/* Adjust Quota Dialog */}
-      {currentRow && (
-        <UserQuotaDialog
-          open={quotaDialogOpen}
-          onOpenChange={setQuotaDialogOpen}
-          userId={currentRow.id}
-          currentQuota={parseQuotaFromDollars(currentQuotaRaw || 0)}
-          onSuccess={refreshUserData}
+      {walletUser && (
+        <ConfirmDialog
+          open={open && review !== null}
+          onOpenChange={(value) => {
+            if (!value && !submitting.current) setReview(null)
+          }}
+          title={t('Confirm wallet adjustments')}
+          desc={
+            <div className='max-h-[65dvh] space-y-4 overflow-y-auto'>
+              <p>
+                {walletUser.username} (#{walletUser.id})
+              </p>
+              <UserWalletAdjustments user={walletUser} pending={pending} />
+            </div>
+          }
+          className='sm:max-w-[680px]'
+          confirmText={t('Confirm adjustments')}
+          disabled={!pendingValid}
+          isLoading={isSubmitting}
+          handleConfirm={() => {
+            if (review) void onSubmit(review, true)
+          }}
         />
       )}
     </>

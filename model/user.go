@@ -95,6 +95,8 @@ type User struct {
 	AccessToken          *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // Deprecated: 旧版面板访问令牌，仅在升级后的过渡期内使用；删除 users.access_token 列时一并移除。
 	AccessTokenCreatedAt *int64                     `json:"-" gorm:"type:bigint;column:access_token_created_at"`    // Deprecated: 旧版面板访问令牌，仅在升级后的过渡期内使用；删除 users.access_token 列时一并移除。
 	Quota                int                        `json:"quota" gorm:"type:int;default:0"`
+	PaidQuota            int                        `json:"paid_quota" gorm:"type:bigint;default:0"`
+	GiftQuota            int                        `json:"gift_quota" gorm:"type:bigint;default:0"`
 	UsedQuota            int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
 	RequestCount         int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
 	Group                string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
@@ -531,7 +533,7 @@ func GetSelfUserById(id int) (*User, error) {
 	err := DB.Model(&User{}).Select([]string{
 		"id", "username", "display_name", "role", "status", "email",
 		"github_id", "discord_id", "oidc_id", "wechat_id", "telegram_id",
-		"group", "quota", "used_quota", "request_count", "aff_code", "aff_count",
+		"group", "quota", "paid_quota", "gift_quota", "used_quota", "request_count", "aff_code", "aff_count",
 		"aff_quota", "aff_history", "inviter_id", "linux_do_id", "setting",
 		"stripe_customer", "auth_version",
 		"CASE WHEN password <> '' THEN 1 ELSE 0 END AS has_password",
@@ -609,16 +611,25 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 	}
 
 	// 更新用户额度
-	user.AffQuota -= quota
-	user.Quota += quota
-
-	// 保存用户状态
-	if err := tx.Save(user).Error; err != nil {
+	if err := common.ValidateWalletQuota(quota); err != nil {
 		return err
 	}
-
-	// 提交事务
-	return tx.Commit().Error
+	if err := tx.Model(user).Update("aff_quota", gorm.Expr("aff_quota - ?", quota)).Error; err != nil {
+		return err
+	}
+	updated, err := grantUserQuotaTx(tx, QuotaFundingGrantParams{
+		UserId: user.Id, FundingType: QuotaFundingTypeGift,
+		SourceType: QuotaFundingSourceInviteReward, GrantedQuota: quota,
+	})
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	*user = updated
+	syncFinanceQuotaDelta(user.Id, quota)
+	return nil
 }
 
 func (user *User) prepareForInsert(tx *gorm.DB) error {
@@ -678,7 +689,7 @@ func (user *User) Insert(inviterId int) error {
 			if err := user.prepareForInsert(tx); err != nil {
 				return err
 			}
-			user.Quota = common.QuotaForNewUser
+			user.Quota, user.PaidQuota, user.GiftQuota = 0, 0, 0
 			user.AffCode = common.GetRandomString(4)
 
 			// 初始化用户设置，包括默认的边栏配置
@@ -688,7 +699,20 @@ func (user *User) Insert(inviterId int) error {
 				user.SetSetting(defaultSetting)
 			}
 
-			return tx.Create(user).Error
+			if err := tx.Create(user).Error; err != nil {
+				return err
+			}
+			if common.QuotaForNewUser > 0 {
+				updated, err := grantUserQuotaTx(tx, QuotaFundingGrantParams{
+					UserId: user.Id, FundingType: QuotaFundingTypeGift,
+					SourceType: QuotaFundingSourceSignupBonus, GrantedQuota: common.QuotaForNewUser,
+				})
+				if err != nil {
+					return err
+				}
+				*user = updated
+			}
+			return nil
 		})
 	}); err != nil {
 		return err
@@ -719,7 +743,7 @@ func (user *User) finishInsert(inviterId int) {
 	}
 	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
 		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
+			_ = GrantGiftQuota(user.Id, common.QuotaForInvitee, QuotaFundingSourceInviteReward, inviterId, "", "invitee bonus")
 			RecordLog(user.Id, LogTypeSystem, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
 		}
 		if common.QuotaForInviter > 0 {
@@ -742,7 +766,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		if err := user.prepareForInsert(tx); err != nil {
 			return err
 		}
-		user.Quota = common.QuotaForNewUser
+		user.Quota, user.PaidQuota, user.GiftQuota = 0, 0, 0
 		user.AffCode = common.GetRandomString(4)
 
 		// 初始化用户设置
@@ -751,7 +775,20 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 			user.SetSetting(defaultSetting)
 		}
 
-		return tx.Create(user).Error
+		if err := tx.Create(user).Error; err != nil {
+			return err
+		}
+		if common.QuotaForNewUser > 0 {
+			updated, err := grantUserQuotaTx(tx, QuotaFundingGrantParams{
+				UserId: user.Id, FundingType: QuotaFundingTypeGift,
+				SourceType: QuotaFundingSourceSignupBonus, GrantedQuota: common.QuotaForNewUser,
+			})
+			if err != nil {
+				return err
+			}
+			*user = updated
+		}
+		return nil
 	})
 }
 
@@ -776,7 +813,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	}
 	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
 		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
+			_ = GrantGiftQuota(user.Id, common.QuotaForInvitee, QuotaFundingSourceInviteReward, inviterId, "", "invitee bonus")
 			RecordLog(user.Id, LogTypeSystem, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
 		}
 		if common.QuotaForInviter > 0 {
@@ -835,6 +872,8 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 	if err = tx.Model(&current).Omit(
 		"access_token",
 		"quota",
+		"paid_quota",
+		"gift_quota",
 		"used_quota",
 		"request_count",
 		"aff_count",
@@ -1185,6 +1224,54 @@ func IsTelegramIdAlreadyTaken(telegramId string) bool {
 	return DB.Unscoped().Where("telegram_id = ?", telegramId).Find(&User{}).RowsAffected == 1
 }
 
+func ResetManagedUserPassword(operatorID, userID int, password string) error {
+	if operatorID <= 0 || userID <= 0 {
+		return errors.New("Invalid parameters")
+	}
+	hash, err := common.HashAccountPassword(password)
+	if err != nil {
+		return err
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		// Lock in ID order so concurrent resets cannot reverse the lock order.
+		var users []User
+		if err := lockForUpdate(tx).Where("id IN ?", []int{operatorID, userID}).Order("id").Find(&users).Error; err != nil {
+			return err
+		}
+		var operator, target *User
+		for i := range users {
+			if users[i].Id == operatorID {
+				operator = &users[i]
+			}
+			if users[i].Id == userID {
+				target = &users[i]
+			}
+		}
+		if operator == nil || target == nil {
+			return gorm.ErrRecordNotFound
+		}
+		if operator.Status != common.UserStatusEnabled || operator.Role < common.RoleAdminUser ||
+			(operator.Role != common.RoleRootUser && operator.Role <= target.Role) {
+			return errors.New("No permission to update users of same or higher permission level")
+		}
+		if common.ValidatePasswordAndHash(password, target.Password) {
+			return common.ErrAccountPasswordSame
+		}
+		if _, err := IncrementUserAuthVersionWithTx(tx, userID); err != nil {
+			return err
+		}
+		return tx.Model(&User{}).Where("id = ?", userID).Update("password", hash).Error
+	})
+	if err != nil {
+		return err
+	}
+	if err := PublishUserAuthCache(userID); err != nil {
+		return err
+	}
+	_, err = RevokeAllUserSessions(userID, "admin_password_reset")
+	return err
+}
+
 func ResetUserPasswordByEmail(email string, password string) error {
 	if email == "" || password == "" {
 		return common.NewMessage("Email or password is empty!")
@@ -1344,24 +1431,10 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	if err := common.ValidateWalletQuota(quota); err != nil {
 		return err
 	}
-	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
-		gopool.Go(func() {
-			if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
-				common.SysLog(common.LogText("failed to increase user quota: %s", err.Error()))
-			}
-		})
-		return nil
-	}
-	if err := increaseUserQuota(id, quota); err != nil {
-		return err
-	}
-	gopool.Go(func() {
-		if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
-			common.SysLog(common.LogText("failed to increase user quota: %s", err.Error()))
-		}
-	})
-	return nil
+	// Wallet mutations and their source allocations commit together. Usage
+	// counters and token updates may still use the upstream batch pipeline.
+	_, err = RefundUserQuotaLegacy(id, quota)
+	return err
 }
 
 func increaseUserQuota(id int, quota int) (err error) {
@@ -1388,17 +1461,8 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
-	gopool.Go(func() {
-		err := cacheDecrUserQuota(id, int64(quota))
-		if err != nil {
-			common.SysLog(common.LogText("failed to decrease user quota: %s", err.Error()))
-		}
-	})
-	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, -quota)
-		return nil
-	}
-	return decreaseUserQuota(id, quota)
+	_, err = ConsumeUserQuotaWithAllocation(id, quota, true)
+	return err
 }
 
 func decreaseUserQuota(id int, quota int) (err error) {

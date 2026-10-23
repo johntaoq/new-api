@@ -163,7 +163,7 @@ function EmptyState({
   description?: string
 }) {
   return (
-    <Empty className='min-h-48 border-0 p-4'>
+    <Empty className='h-full min-h-0 border-0 p-4'>
       <EmptyHeader>
         <EmptyMedia variant='icon'>{icon}</EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
@@ -204,7 +204,7 @@ function NoticeContent({
   }
 
   return (
-    <ScrollArea className='h-[min(52vh,28rem)] pr-3'>
+    <ScrollArea className='h-full pr-3'>
       <RichContent breaks content={notice} />
     </ScrollArea>
   )
@@ -239,7 +239,7 @@ function AnnouncementsContent({
   }
 
   return (
-    <ScrollArea className='h-[min(52vh,28rem)] pr-3'>
+    <ScrollArea className='h-full pr-3'>
       <div className='flex flex-col'>
         {announcements.map((item, idx) => {
           const announcementKey = getAnnouncementRenderKey(item)
@@ -328,9 +328,11 @@ export function NotificationPopover({
       <PopoverContent
         align='end'
         sideOffset={8}
-        className='w-[min(26rem,calc(100vw-1rem))] gap-3 p-3'
+        collisionPadding={0}
+        collisionAvoidance={{ side: 'shift', align: 'shift' }}
+        className='h-dvh w-[min(26rem,calc(100vw-1rem))] gap-3 overflow-hidden p-3'
       >
-        <PopoverHeader className='gap-1 px-1'>
+        <PopoverHeader className='shrink-0 gap-1 px-1'>
           <PopoverTitle>{t('System Announcements')}</PopoverTitle>
           <p className='text-muted-foreground text-xs'>
             {t('Latest platform updates and notices')}
@@ -340,8 +342,9 @@ export function NotificationPopover({
         <Tabs
           value={activeTab}
           onValueChange={onTabChange as (value: string) => void}
+          className='min-h-0 flex-1'
         >
-          <TabsList className='grid w-full grid-cols-2'>
+          <TabsList className='grid w-full shrink-0 grid-cols-2'>
             <TabsTrigger value='notice' className='gap-1.5'>
               <Bell className='size-3.5' />
               {t('Notice')}
@@ -352,11 +355,11 @@ export function NotificationPopover({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value='notice' className='mt-2'>
+          <TabsContent value='notice' className='mt-2 min-h-0'>
             <NoticeContent notice={notice} loading={loading} t={t} />
           </TabsContent>
 
-          <TabsContent value='announcements' className='mt-2'>
+          <TabsContent value='announcements' className='mt-2 min-h-0'>
             <AnnouncementsContent
               announcements={announcements}
               loading={loading}
@@ -365,7 +368,7 @@ export function NotificationPopover({
           </TabsContent>
         </Tabs>
 
-        <div className='flex justify-end'>
+        <div className='flex shrink-0 justify-end'>
           <Button size='sm' onClick={() => onOpenChange(false)}>
             {t('Close')}
           </Button>

@@ -77,6 +77,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 		setTaskImageCount(other, info.PriceData.OtherRatios()["image_count"])
 	}
 	appendTaskLogInfo(task, other)
+	appendBillingInfo(info, other)
 	attachQuotaSaturation(c, info, other)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
@@ -113,14 +114,25 @@ func taskIsSubscription(task *model.Task) bool {
 }
 
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
-func taskAdjustFunding(task *model.Task, delta int) error {
+func taskAdjustFunding(task *model.Task, delta int) ([]types.QuotaFundingAllocation, error) {
 	if taskIsSubscription(task) {
-		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
+		return nil, model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(task.UserId, delta, false)
+		allocations, err := model.ConsumeUserQuotaWithAllocation(task.UserId, delta, true)
+		if err == nil {
+			task.PrivateData.QuotaFundingAllocations = append(task.PrivateData.QuotaFundingAllocations, allocations...)
+		}
+		return allocations, err
 	}
-	return model.IncreaseUserQuota(task.UserId, -delta, false)
+	if len(task.PrivateData.QuotaFundingAllocations) == 0 {
+		return model.RefundUserQuotaLegacy(task.UserId, -delta)
+	}
+	remaining, refunded, err := model.RefundUserQuotaAllocations(task.UserId, task.PrivateData.QuotaFundingAllocations, -delta)
+	if err == nil {
+		task.PrivateData.QuotaFundingAllocations = remaining
+	}
+	return refunded, err
 }
 
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
@@ -149,6 +161,7 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 	other := model.NewLogOther()
 	// 前端列表按 is_task 选择任务档位渲染分支,缺失会把差额/退款日志误判成普通 relay 动态计费
 	other.SetPublic("is_task", true)
+	other.SetPublic("billing_source", task.PrivateData.BillingSource)
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		other.SetPublic("model_price", bc.ModelPrice)
 		if bc.ModelRatio > 0 {
@@ -267,7 +280,8 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	}
 
 	// 1. 退还资金来源（钱包或订阅）
-	if err := taskAdjustFunding(task, -quota); err != nil {
+	allocations, err := taskAdjustFunding(task, -quota)
+	if err != nil {
 		logger.LogWarn(ctx, common.LogText("failed to refund the funding source, task %s: %s", task.TaskID, err.Error()))
 		return false
 	}
@@ -281,6 +295,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 
 	// 4. 记录日志
 	other := taskBillingOther(task)
+	model.AppendFinanceAllocations(other, allocations)
 	other.SetPublic("task_id", task.TaskID)
 	other.SetPublic("reason", reason)
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
@@ -297,7 +312,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	// 5. 资金退款完成后再清除持久化标记。
 	// 回写失败必须显式告警，避免漏掉潜在的重复退款风险。
 	task.Quota = 0
-	if err := task.UpdateQuota(); err != nil {
+	if err := model.UpdateTaskQuotaAllocationState(task); err != nil {
 		logger.LogError(ctx, common.LogText("refund succeeded but clearing the task quota failed, task %s: %s", task.TaskID, err.Error()))
 	}
 	return true
@@ -329,7 +344,8 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	))
 
 	// 调整资金来源
-	if err := taskAdjustFunding(task, quotaDelta); err != nil {
+	allocations, err := taskAdjustFunding(task, quotaDelta)
+	if err != nil {
 		logger.LogError(ctx, common.LogText("failed to adjust funding for the difference, task %s: %s", task.TaskID, err.Error()))
 		return
 	}
@@ -338,7 +354,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	taskAdjustTokenQuota(ctx, task, quotaDelta)
 
 	task.Quota = actualQuota
-	if err := task.UpdateQuota(); err != nil {
+	if err := model.UpdateTaskQuotaAllocationState(task); err != nil {
 		logger.LogError(ctx, common.LogText("failed to write back the settled task quota, task %s: %s", task.TaskID, err.Error()))
 	}
 
@@ -356,6 +372,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		logQuota = -quotaDelta
 	}
 	other := taskBillingOther(task)
+	model.AppendFinanceAllocations(other, allocations)
 	other.SetPublic("task_id", task.TaskID)
 	other.SetPublic("pre_consumed_quota", preConsumedQuota)
 	other.SetPublic("actual_quota", actualQuota)

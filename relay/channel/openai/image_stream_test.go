@@ -489,6 +489,53 @@ func TestOpenaiImageHandlerUsesPositiveActualCountForFixedPrice(t *testing.T) {
 	}
 }
 
+func TestNewAPIImageUsageFallbackForMAIModels(t *testing.T) {
+	tests := []struct {
+		name  string
+		model string
+		count int
+	}{
+		{name: "mai standard", model: "MAI-Image-2.6", count: 1},
+		{name: "mai flash", model: "MAI-Image-2.6-Flash", count: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			usage := &dto.Usage{PromptTokens: 1}
+			info := &relaycommon.RelayInfo{
+				OriginModelName: tt.model,
+				RequestURLPath:  "/v1/images/generations",
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelType: constant.ChannelTypeNewAPI,
+				},
+				ImageRequestCount: tt.count,
+			}
+
+			applyUsagePostProcessing(info, usage, nil)
+
+			require.Equal(t, 5*tt.count, usage.PromptTokens)
+			require.Equal(t, 1024*tt.count, usage.CompletionTokens)
+			require.Equal(t, 1029*tt.count, usage.TotalTokens)
+		})
+	}
+}
+
+func TestNewAPIImageUsageFallbackDoesNotOverrideRealUsage(t *testing.T) {
+	usage := &dto.Usage{PromptTokens: 5, CompletionTokens: 1024, TotalTokens: 1029}
+	info := &relaycommon.RelayInfo{
+		OriginModelName:    "MAI-Image-2.6",
+		RequestURLPath:     "/v1/images/generations",
+		ImageRequestCount:  1,
+		ChannelMeta:        &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeNewAPI},
+	}
+
+	applyUsagePostProcessing(info, usage, nil)
+
+	require.Equal(t, 5, usage.PromptTokens)
+	require.Equal(t, 1024, usage.CompletionTokens)
+	require.Equal(t, 1029, usage.TotalTokens)
+}
+
 // TestOpenaiImageStreamHandlerWrapsNonStandardDataShapes covers the JSON-to-SSE
 // fallback when upstream returns data as an object, splits one image across a
 // url entry and a b64_json entry, or returns entries without any image payload.

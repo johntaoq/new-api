@@ -199,8 +199,8 @@ func UserCriticalRateLimit(scope string) func(c *gin.Context) {
 		return defNext
 	}
 	return userRateLimitFactory(
-		common.CriticalRateLimitNum,
-		common.CriticalRateLimitDuration,
+		common.UserCriticalRateLimitNum,
+		common.UserCriticalRateLimitDuration,
 		"UC:"+scope,
 	)
 }

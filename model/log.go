@@ -76,6 +76,8 @@ type Log struct {
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
+	DetailId          int    `json:"detail_id,omitempty" gorm:"-"`
+	Summary           bool   `json:"summary,omitempty" gorm:"-"`
 }
 
 // don't use iota, avoid change log type value
@@ -98,7 +100,18 @@ func ensureLogRequestId(log *Log) {
 
 func createLog(log *Log) error {
 	ensureLogRequestId(log)
-	return LOG_DB.Create(log).Error
+	var logErr error
+	if log.Type != LogTypeConsume || common.LogConsumeEnabled {
+		logErr = LOG_DB.Create(log).Error
+	}
+	// The accounting ledger must not disappear when optional usage logs are disabled.
+	if err := recordFinanceUsageLog(log); err != nil {
+		common.SysError("failed to record financial usage ledger: " + err.Error())
+		if logErr == nil {
+			logErr = err
+		}
+	}
+	return logErr
 }
 
 func clickHouseLogOrder(prefix string) string {
@@ -337,9 +350,6 @@ type RecordConsumeLogParams struct {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
-	if !common.LogConsumeEnabled {
-		return
-	}
 	logger.LogInfo(c, common.LogText("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
@@ -415,9 +425,6 @@ type RecordTaskBillingLogParams struct {
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
-	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled {
-		return
-	}
 	username, _ := GetUsernameById(params.UserId, false)
 	tokenName := ""
 	if params.TokenId > 0 {
@@ -467,6 +474,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 // LogFilter is the usage-log search shared by the log list and the log export.
 // Username and Channel are administrator filters.
 type LogFilter struct {
+	Summary           bool
 	Type              int
 	StartTimestamp    int64
 	EndTimestamp      int64
@@ -530,6 +538,9 @@ func GetAllLogs(filter LogFilter, startIdx int, num int) (logs []*Log, total int
 	err = tx.Order(order).Limit(num).Offset(startIdx).Find(&logs).Error
 	if err != nil {
 		return nil, 0, err
+	}
+	if filter.Summary {
+		setLogDetailLocators(logs)
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		assignDisplayLogIds(logs, startIdx)
@@ -600,6 +611,9 @@ func GetUserLogs(userId int, filter LogFilter, startIdx int, num int) (logs []*L
 		return nil, 0, common.NewMessage("Failed to query logs")
 	}
 
+	if filter.Summary {
+		setLogDetailLocators(logs)
+	}
 	formatUserLogs(logs, startIdx)
 	return logs, total, err
 }

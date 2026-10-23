@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { toIntlLocale } from '@/i18n/languages'
 import { formatCurrencyFromUSD } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
 
@@ -64,7 +65,8 @@ export function BillingHistoryDialog({
   open,
   onOpenChange,
 }: BillingHistoryDialogProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const {
     records,
     total,
@@ -248,11 +250,14 @@ export function BillingHistoryDialog({
                             {t('Amount')}
                           </Label>
                           <div className='text-sm font-semibold'>
-                            {formatCurrencyFromUSD(record.amount, {
-                              digitsLarge: 2,
-                              digitsSmall: 2,
-                              abbreviate: false,
-                            })}
+                            {record.currency && record.input_amount
+                              ? `${formatNumber(record.input_amount, locale)} ${record.currency}`
+                              : formatCurrencyFromUSD(record.amount, {
+                                  digitsLarge: 2,
+                                  digitsSmall: 2,
+                                  abbreviate: false,
+                                  locale,
+                                })}
                           </div>
                         </div>
                         <div className='space-y-1'>
@@ -260,7 +265,8 @@ export function BillingHistoryDialog({
                             {t('Payment')}
                           </Label>
                           <div className='text-sm font-semibold text-red-600'>
-                            {formatNumber(record.money)}
+                            {formatNumber(record.money, locale)}
+                            {record.exchange_rate ? ' CNY' : ''}
                           </div>
                         </div>
                       </div>

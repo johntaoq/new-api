@@ -53,6 +53,20 @@ func TestInitSeedsBuiltInRolesAndPoliciesOnce(t *testing.T) {
 	assert.False(t, Can(3, common.RoleCommonUser, ChannelRead))
 }
 
+func TestFinancePermissionsDefaultDenyAndStayIndependent(t *testing.T) {
+	db := newAuthzTestDB(t)
+	require.NoError(t, Init(db))
+	for _, permission := range []Permission{FinanceRead, FinanceWrite, FinanceAudit} {
+		assert.True(t, Can(1, common.RoleRootUser, permission))
+		assert.False(t, Can(42, common.RoleAdminUser, permission))
+		assert.False(t, Can(43, common.RoleCommonUser, permission))
+	}
+	require.NoError(t, SetUserPermissions(42, PermissionsMap{ResourceFinance: {ActionRead: true}}))
+	assert.True(t, Can(42, common.RoleAdminUser, FinanceRead))
+	assert.False(t, Can(42, common.RoleAdminUser, FinanceWrite))
+	assert.False(t, Can(42, common.RoleAdminUser, FinanceAudit))
+}
+
 func TestInitOnSlaveOnlyLoadsPolicies(t *testing.T) {
 	wasMaster := common.IsMasterNode
 	common.IsMasterNode = false
@@ -158,6 +172,7 @@ func TestSetUserPermissionsStoresOnlyOverrides(t *testing.T) {
 			ActionBind: false,
 		},
 		ResourceAudit: {ActionRead: false},
+		ResourceFinance: {ActionRead: false, ActionWrite: false, "audit": false},
 	}, ExplicitUserPermissions(42))
 	assert.Equal(t, PermissionsMap{
 		ResourceChannel: {
@@ -190,6 +205,7 @@ func TestSetUserPermissionsStoresOnlyOverrides(t *testing.T) {
 			ActionBind: false,
 		},
 		ResourceAudit: {ActionRead: false},
+		ResourceFinance: {ActionRead: false, ActionWrite: false, "audit": false},
 	}, ExplicitUserPermissions(42))
 	assert.Empty(t, ExplicitUserOverrides(42))
 }

@@ -128,6 +128,8 @@ export interface TopupInfo {
   pay_methods: PaymentMethod[]
   /** Minimum topup amount for online topup */
   min_topup: number
+  min_topup_cny?: number
+  recharge_rate?: number
   /** Minimum topup amount for Stripe */
   stripe_min_topup: number
   /** Preset amount options */
@@ -182,6 +184,7 @@ export interface RedemptionRequest {
 export interface PaymentRequest {
   /** Topup amount */
   amount: number
+  currency?: 'CNY' | 'USD'
   /** Payment method identifier */
   payment_method: string
 }
@@ -210,6 +213,7 @@ export interface WaffoPancakePaymentRequest {
 export interface AmountRequest {
   /** Topup amount to calculate */
   amount: number
+  currency?: 'CNY' | 'USD'
 }
 
 /**
@@ -230,6 +234,8 @@ export interface UserWalletData {
   username: string
   /** Current quota balance */
   quota: number
+  paid_quota?: number
+  gift_quota?: number
   /** Total used quota */
   used_quota: number
   /** Total request count */
@@ -253,6 +259,10 @@ export type TopupStatus = 'success' | 'pending' | 'expired'
  * Topup billing record
  */
 export interface TopupRecord {
+  currency?: 'USD' | 'CNY'
+  input_amount?: number
+  exchange_rate?: number
+  quota?: number
   /** Record ID */
   id: number
   /** User ID */

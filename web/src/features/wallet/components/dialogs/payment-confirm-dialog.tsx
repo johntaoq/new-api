@@ -37,6 +37,7 @@ import { formatCurrency, getPaymentIcon } from '../../lib'
 import type { PaymentMethod } from '../../types'
 
 interface PaymentConfirmDialogProps {
+  inputCurrency?: 'CNY' | 'USD'
   open: boolean
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
@@ -50,6 +51,7 @@ interface PaymentConfirmDialogProps {
 }
 
 export function PaymentConfirmDialog({
+  inputCurrency,
   open,
   onOpenChange,
   onConfirm,
@@ -84,11 +86,13 @@ export function PaymentConfirmDialog({
               {t('Topup Amount')}
             </span>
             <span className='text-lg font-semibold'>
-              {formatLocalCurrencyAmount(topupAmount * usdExchangeRate, {
-                digitsLarge: 2,
-                digitsSmall: 2,
-                abbreviate: false,
-              })}
+              {inputCurrency
+                ? `${topupAmount} ${inputCurrency}`
+                : formatLocalCurrencyAmount(topupAmount * usdExchangeRate, {
+                    digitsLarge: 2,
+                    digitsSmall: 2,
+                    abbreviate: false,
+                  })}
             </span>
           </div>
 
@@ -145,7 +149,10 @@ export function PaymentConfirmDialog({
           <AlertDialogCancel disabled={processing}>
             {t('Cancel')}
           </AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm} disabled={processing}>
+          <AlertDialogAction
+            onClick={onConfirm}
+            disabled={processing || calculating || paymentAmount <= 0}
+          >
             {processing && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {t('Confirm Payment')}
           </AlertDialogAction>

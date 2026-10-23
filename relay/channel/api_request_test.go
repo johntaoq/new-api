@@ -2,15 +2,90 @@ package channel
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestImageRelayDeadlineDoesNotLimitText(t *testing.T) {
+	previousImage, previousRelay := common.ImageRelayTimeout, common.RelayTimeout
+	common.ImageRelayTimeout, common.RelayTimeout = 1, 0
+	service.InitHttpClient()
+	t.Cleanup(func() {
+		common.ImageRelayTimeout, common.RelayTimeout = previousImage, previousRelay
+		service.InitHttpClient()
+	})
+	canceled := make(chan string, 3)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+		if r.URL.Path == "/body" {
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+		}
+		timer := time.NewTimer(1500 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-r.Context().Done():
+			canceled <- r.URL.Path
+			return
+		case <-timer.C:
+			_, _ = io.WriteString(w, "complete")
+		}
+	}))
+	defer upstream.Close()
+	for _, tc := range []struct {
+		name, path string
+		mode       int
+		timedOut   bool
+	}{
+		{"generation_headers", "/headers", constant.RelayModeImagesGenerations, true},
+		{"edit_body", "/body", constant.RelayModeImagesEdits, true},
+		{"text", "/body", constant.RelayModeChatCompletions, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{}"))
+			request, err := http.NewRequest(http.MethodPost, upstream.URL+tc.path, strings.NewReader("{}"))
+			require.NoError(t, err)
+			info := &relaycommon.RelayInfo{RelayMode: tc.mode, ChannelMeta: &relaycommon.ChannelMeta{}}
+			response, err := DoRequest(c, request, info)
+			if response != nil {
+				defer response.Body.Close()
+				var body []byte
+				body, err = io.ReadAll(response.Body)
+				if !tc.timedOut {
+					assert.Equal(t, "complete", string(body))
+				}
+			}
+			if tc.timedOut {
+				require.Error(t, err)
+				if response != nil {
+					require.ErrorIs(t, err, context.DeadlineExceeded)
+				}
+				select {
+				case path := <-canceled:
+					assert.Equal(t, tc.path, path, "the upstream request must be canceled")
+				case <-time.After(3 * time.Second):
+					t.Fatal("the image timeout did not cancel the upstream request")
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
 
 func TestNewTaskAPIRequestInheritsClientCancellation(t *testing.T) {
 	recorder := httptest.NewRecorder()

@@ -120,7 +120,7 @@ export async function createUser(
 }
 
 /**
- * Update an existing user. Changing the password or the admin permission
+ * Update an existing user. Changing the admin permission
  * matrix requires an `admin.user.update` proof.
  */
 export async function updateUser(
@@ -128,6 +128,41 @@ export async function updateUser(
   proofToken?: string
 ): Promise<ApiResponse<Partial<User>>> {
   const res = await api.put('/api/user/', data, securityProofConfig(proofToken))
+  return res.data
+}
+
+export async function resetManagedUserPassword(
+  id: number,
+  password: string,
+  confirmPassword: string
+): Promise<ApiResponse> {
+  const res = await api.post(
+    `/api/user/${id}/password`,
+    {
+      password,
+      confirm_password: confirmPassword,
+      confirmed: true,
+    },
+    { singleUseAuthorization: true }
+  )
+  return res.data
+}
+
+export interface WalletAdjustment {
+  funding_type: 'paid' | 'gift'
+  delta_quota: number
+  source_type: string
+  remark: string
+  revenue_usd: number
+}
+
+export async function adjustUserWallet(
+  id: number,
+  data: WalletAdjustment
+): Promise<ApiResponse> {
+  const res = await api.post(`/api/user/${id}/quota_adjust`, data, {
+    singleUseAuthorization: true,
+  })
   return res.data
 }
 

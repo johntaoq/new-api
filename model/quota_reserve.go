@@ -168,33 +168,11 @@ func TryReserveUserQuota(id int, quota int) (bool, error) {
 	if quota == 0 {
 		return true, nil
 	}
-	if !common.RedisEnabled {
-		return reserveUserQuotaDB(id, quota)
-	}
-
-	result, err := cacheTryReserveUserQuota(id, int64(quota))
-	if err == nil && result == cacheQuotaMiss {
-		if _, hydrateErr := GetUserCache(id); hydrateErr == nil {
-			result, err = cacheTryReserveUserQuota(id, int64(quota))
-		}
-	}
-	if err != nil || result == cacheQuotaMiss {
-		if err != nil {
-			common.SysLog(common.LogText("user quota cache reserve unavailable, falling back to database: %s", err.Error()))
-		}
-		return reserveUserQuotaDB(id, quota)
-	}
-	if result == cacheQuotaInsufficient {
+	_, err := ConsumeUserQuotaWithAllocation(id, quota)
+	if errors.Is(err, ErrFinanceInsufficientQuota) {
 		return false, nil
 	}
-	if err = persistUserQuotaDelta(id, -quota); err != nil {
-		compensated, compensateErr := cacheApplyUserQuotaDelta(id, int64(quota))
-		if compensateErr != nil || compensated != cacheQuotaOK {
-			common.SysError(common.LogText("failed to compensate reserved user quota: result=%d error=%v", compensated, compensateErr))
-		}
-		return false, err
-	}
-	return true, nil
+	return err == nil, err
 }
 
 // TryReserveTokenQuota atomically checks and deducts a token quota. Unlimited

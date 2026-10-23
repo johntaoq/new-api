@@ -31,7 +31,7 @@ import { readCachedStatus, statusQueryOptions } from '@/lib/status-query'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
-import './i18n/config'
+import { i18nReady } from './i18n/config'
 // Generated Routes
 import { routeTree } from './routeTree.gen'
 
@@ -100,7 +100,8 @@ if (!rootElement) {
     /* empty */
   }
 })()
-if (!rootElement.innerHTML) {
+void i18nReady.then(() => {
+  if (rootElement.innerHTML) return
   const root = ReactDOM.createRoot(rootElement)
   root.render(
     <StrictMode>
@@ -115,4 +116,4 @@ if (!rootElement.innerHTML) {
       </QueryClientProvider>
     </StrictMode>
   )
-}
+})

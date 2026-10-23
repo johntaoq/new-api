@@ -187,6 +187,7 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other *model.LogOther) 
 		return
 	}
 	// billing_source: "wallet" or "subscription"
+	model.AppendFinanceAllocations(other, relayInfo.QuotaFundingAllocations)
 	if relayInfo.BillingSource != "" {
 		other.SetPublic("billing_source", relayInfo.BillingSource)
 	}

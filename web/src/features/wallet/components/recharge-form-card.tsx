@@ -16,10 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import {
+  Check,
+  Gift,
+  ExternalLink,
+  Loader2,
+  Receipt,
+  WalletCards,
+} from 'lucide-react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 
+import alipayPaymentImage from '@/assets/payments/alipay-payment.png'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -27,6 +35,7 @@ import { IconBadge } from '@/components/ui/icon-badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TitledCard } from '@/components/ui/titled-card'
 import {
   Tooltip,
@@ -53,7 +62,21 @@ import type {
 } from '../types'
 import { CreemProductsSection } from './creem-products-section'
 
+const PRESET_TONES = [
+  'border-cyan-300 border-l-cyan-500 bg-cyan-50 text-cyan-950 hover:border-cyan-500 hover:bg-cyan-100 hover:text-cyan-950 aria-pressed:border-cyan-600 aria-pressed:bg-cyan-100 dark:border-cyan-800 dark:border-l-cyan-400 dark:bg-cyan-950/60 dark:text-cyan-100 dark:hover:border-cyan-400 dark:hover:bg-cyan-900/70 dark:hover:text-cyan-100 dark:aria-pressed:border-cyan-400 dark:aria-pressed:bg-cyan-900/80',
+  'border-emerald-300 border-l-emerald-500 bg-emerald-50 text-emerald-950 hover:border-emerald-500 hover:bg-emerald-100 hover:text-emerald-950 aria-pressed:border-emerald-600 aria-pressed:bg-emerald-100 dark:border-emerald-800 dark:border-l-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-100 dark:hover:border-emerald-400 dark:hover:bg-emerald-900/70 dark:hover:text-emerald-100 dark:aria-pressed:border-emerald-400 dark:aria-pressed:bg-emerald-900/80',
+  'border-blue-300 border-l-blue-500 bg-blue-50 text-blue-950 hover:border-blue-500 hover:bg-blue-100 hover:text-blue-950 aria-pressed:border-blue-600 aria-pressed:bg-blue-100 dark:border-blue-800 dark:border-l-blue-400 dark:bg-blue-950/60 dark:text-blue-100 dark:hover:border-blue-400 dark:hover:bg-blue-900/70 dark:hover:text-blue-100 dark:aria-pressed:border-blue-400 dark:aria-pressed:bg-blue-900/80',
+  'border-amber-300 border-l-amber-500 bg-amber-50 text-amber-950 hover:border-amber-500 hover:bg-amber-100 hover:text-amber-950 aria-pressed:border-amber-600 aria-pressed:bg-amber-100 dark:border-amber-800 dark:border-l-amber-400 dark:bg-amber-950/60 dark:text-amber-100 dark:hover:border-amber-400 dark:hover:bg-amber-900/70 dark:hover:text-amber-100 dark:aria-pressed:border-amber-400 dark:aria-pressed:bg-amber-900/80',
+  'border-rose-300 border-l-rose-500 bg-rose-50 text-rose-950 hover:border-rose-500 hover:bg-rose-100 hover:text-rose-950 aria-pressed:border-rose-600 aria-pressed:bg-rose-100 dark:border-rose-800 dark:border-l-rose-400 dark:bg-rose-950/60 dark:text-rose-100 dark:hover:border-rose-400 dark:hover:bg-rose-900/70 dark:hover:text-rose-100 dark:aria-pressed:border-rose-400 dark:aria-pressed:bg-rose-900/80',
+  'border-violet-300 border-l-violet-500 bg-violet-50 text-violet-950 hover:border-violet-500 hover:bg-violet-100 hover:text-violet-950 aria-pressed:border-violet-600 aria-pressed:bg-violet-100 dark:border-violet-800 dark:border-l-violet-400 dark:bg-violet-950/60 dark:text-violet-100 dark:hover:border-violet-400 dark:hover:bg-violet-900/70 dark:hover:text-violet-100 dark:aria-pressed:border-violet-400 dark:aria-pressed:bg-violet-900/80',
+  'border-orange-300 border-l-orange-500 bg-orange-50 text-orange-950 hover:border-orange-500 hover:bg-orange-100 hover:text-orange-950 aria-pressed:border-orange-600 aria-pressed:bg-orange-100 dark:border-orange-800 dark:border-l-orange-400 dark:bg-orange-950/60 dark:text-orange-100 dark:hover:border-orange-400 dark:hover:bg-orange-900/70 dark:hover:text-orange-100 dark:aria-pressed:border-orange-400 dark:aria-pressed:bg-orange-900/80',
+] as const
+
 interface RechargeFormCardProps {
+  topupCurrency?: 'CNY' | 'USD'
+  onCurrencyChange?: (currency: 'CNY' | 'USD') => void
+  currencySelectable?: boolean
+  minimumAmount?: number
   topupInfo: TopupInfo | null
   presetAmounts: PresetAmount[]
   selectedPreset: number | null
@@ -84,6 +107,10 @@ interface RechargeFormCardProps {
 }
 
 export function RechargeFormCard({
+  topupCurrency = 'USD',
+  onCurrencyChange,
+  currencySelectable,
+  minimumAmount,
   topupInfo,
   presetAmounts,
   selectedPreset,
@@ -140,7 +167,7 @@ export function RechargeFormCard({
     Array.isArray(topupInfo?.pay_methods) && topupInfo.pay_methods.length > 0
   const hasWaffoPaymentMethods =
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
-  const minTopup = getMinTopupAmount(topupInfo)
+  const minTopup = minimumAmount ?? getMinTopupAmount(topupInfo)
   const redemptionEnabled = topupInfo?.enable_redemption !== false
 
   if (loading) {
@@ -221,13 +248,45 @@ export function RechargeFormCard({
         <div className='space-y-4 sm:space-y-6'>
           {hasConfigurableTopup && (
             <>
+              {currencySelectable && (
+                <div className='flex items-center gap-3'>
+                  <Label id='topup-currency-label'>{t('Currency')}</Label>
+                  <Tabs
+                    value={topupCurrency}
+                    onValueChange={(value) => {
+                      if (value === 'CNY' || value === 'USD') {
+                        onCurrencyChange?.(value)
+                      }
+                    }}
+                  >
+                    <TabsList
+                      activateOnFocus
+                      aria-labelledby='topup-currency-label'
+                      className='bg-muted/50 w-52 max-w-full border p-1 group-data-horizontal/tabs:h-11'
+                    >
+                      <TabsTrigger
+                        value='CNY'
+                        className='data-active:bg-foreground data-active:text-background dark:data-active:bg-foreground dark:data-active:text-background px-5 font-semibold dark:data-active:border-transparent'
+                      >
+                        CNY
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value='USD'
+                        className='data-active:bg-foreground data-active:text-background dark:data-active:bg-foreground dark:data-active:text-background px-5 font-semibold dark:data-active:border-transparent'
+                      >
+                        USD
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+              )}
               {presetAmounts.length > 0 && (
                 <div className='space-y-2.5 sm:space-y-3'>
                   <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
                     {t('Amount')}
                   </Label>
-                  <div className='grid grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-4'>
-                    {presetAmounts.map((preset) => {
+                  <div className='grid auto-rows-fr grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4'>
+                    {presetAmounts.map((preset, index) => {
                       const discount =
                         preset.discount ||
                         topupInfo?.discount?.[preset.value] ||
@@ -247,25 +306,34 @@ export function RechargeFormCard({
                         <Button
                           key={preset.value}
                           variant='outline'
+                          aria-pressed={selectedPreset === preset.value}
                           className={cn(
-                            'flex min-h-16 flex-col items-start rounded-lg px-3 py-2.5 text-left whitespace-normal sm:min-h-[72px] sm:p-4',
-                            selectedPreset === preset.value
-                              ? 'border-foreground bg-foreground/5 dark:border-foreground dark:bg-foreground/10'
-                              : 'border-muted'
+                            'relative flex h-auto min-h-28 min-w-0 flex-col items-start justify-between rounded-lg border-l-4 px-3 py-3 text-left whitespace-normal aria-pressed:shadow-sm aria-pressed:ring-1 aria-pressed:ring-current sm:p-4',
+                            PRESET_TONES[index % PRESET_TONES.length]
                           )}
                           onClick={() => onSelectPreset(preset)}
                         >
-                          <div className='flex w-full items-center justify-between'>
-                            <div className='text-base font-semibold sm:text-lg'>
-                              {formatNumber(displayValue)}
+                          <Check
+                            aria-hidden='true'
+                            className={cn(
+                              'absolute top-3 right-3 size-4',
+                              selectedPreset !== preset.value && 'opacity-0'
+                            )}
+                          />
+                          <div className='flex w-full flex-wrap items-baseline gap-x-2 gap-y-1 pr-5'>
+                            <div className='min-w-0 text-2xl leading-8 font-bold break-all tabular-nums sm:text-3xl sm:leading-9'>
+                              {formatNumber(displayValue)}{' '}
+                              <span className='text-xs font-semibold sm:text-sm'>
+                                {topupCurrency}
+                              </span>
                             </div>
                             {hasDiscount && (
-                              <div className='text-xs font-medium text-green-600'>
+                              <div className='text-xs font-semibold text-emerald-800 dark:text-emerald-200'>
                                 {getDiscountLabel(discount, t)}
                               </div>
                             )}
                           </div>
-                          <div className='text-muted-foreground mt-1.5 w-full text-xs sm:mt-2'>
+                          <div className='mt-2 w-full text-xs leading-5 font-medium sm:text-sm'>
                             {hasDiscount && savedAmount > 0 ? (
                               <Trans
                                 t={t}
@@ -275,7 +343,9 @@ export function RechargeFormCard({
                                   saved: formatCurrency(savedAmount),
                                 }}
                                 components={{
-                                  savings: <span className='text-green-600' />,
+                                  savings: (
+                                    <span className='text-emerald-800 dark:text-emerald-200' />
+                                  ),
                                 }}
                               />
                             ) : (
@@ -296,7 +366,7 @@ export function RechargeFormCard({
                   htmlFor='topup-amount'
                   className='text-muted-foreground text-xs font-medium tracking-wider uppercase'
                 >
-                  {t('Custom Amount')}
+                  {t('Custom Amount')} ({topupCurrency})
                 </Label>
                 <div className='grid grid-cols-[minmax(0,1fr)_minmax(110px,0.55fr)] gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center'>
                   <Input
@@ -332,7 +402,7 @@ export function RechargeFormCard({
                     {topupInfo?.pay_methods?.map((method) => {
                       const minTopup = Math.max(
                         method.min_topup || 0,
-                        getMinTopupAmount(topupInfo)
+                        minimumAmount ?? getMinTopupAmount(topupInfo)
                       )
                       const disabled = minTopup > topupAmount
                       const disabledReason = disabled
@@ -343,6 +413,36 @@ export function RechargeFormCard({
                       const disabledLabel = disabled
                         ? `${t('Minimum:')} ${minTopup}`
                         : undefined
+                      const isAlipay = method.type === 'alipay'
+                      let paymentIcon: ReactNode
+                      if (paymentLoading === method.type) {
+                        paymentIcon = (
+                          <Loader2
+                            aria-hidden='true'
+                            className='size-5 animate-spin'
+                          />
+                        )
+                      } else if (isAlipay) {
+                        paymentIcon = (
+                          <img
+                            src={alipayPaymentImage}
+                            alt={method.name}
+                            width={826}
+                            height={368}
+                            className={cn(
+                              'h-12 w-auto max-w-full shrink-0 object-contain',
+                              disabled && 'mb-4 grayscale'
+                            )}
+                          />
+                        )
+                      } else {
+                        paymentIcon = getPaymentIcon(
+                          method.type,
+                          'h-5 w-5',
+                          method.icon,
+                          method.name
+                        )
+                      }
 
                       const button = (
                         <Button
@@ -356,20 +456,29 @@ export function RechargeFormCard({
                               ? `${method.name}. ${disabledReason}`
                               : method.name
                           }
-                          className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
-                        >
-                          {paymentLoading === method.type ? (
-                            <Loader2 className='h-4 w-4 animate-spin' />
-                          ) : (
-                            getPaymentIcon(
-                              method.type,
-                              'h-4 w-4',
-                              method.icon,
-                              method.name
-                            )
+                          className={cn(
+                            'relative h-20 min-w-0 justify-center gap-3 rounded-lg border-blue-600 bg-blue-600 px-3 py-2 text-left font-semibold text-white shadow-sm hover:border-blue-700 hover:bg-blue-700 hover:text-white focus-visible:ring-blue-400/50 disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70 disabled:shadow-none dark:border-blue-500 dark:bg-blue-600 dark:hover:border-blue-400 dark:hover:bg-blue-500 dark:disabled:border-border dark:disabled:bg-muted',
+                            isAlipay &&
+                              'border-[#487aef] bg-[#487aef] hover:border-[#3565d8] hover:bg-[#3565d8] dark:border-[#487aef] dark:bg-[#487aef] dark:hover:border-[#3565d8] dark:hover:bg-[#3565d8]'
                           )}
-                          <span className='flex min-w-0 flex-col items-start gap-0.5'>
-                            <span className='max-w-full truncate'>
+                        >
+                          {paymentIcon}
+                          <span
+                            className={cn(
+                              'flex min-w-0 flex-col items-start gap-0.5',
+                              isAlipay &&
+                                paymentLoading !== method.type &&
+                                'absolute inset-x-2 bottom-1 items-center'
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'max-w-full truncate',
+                                isAlipay &&
+                                  paymentLoading !== method.type &&
+                                  'sr-only'
+                              )}
+                            >
                               {method.name}
                             </span>
                             {disabledLabel && (
@@ -454,7 +563,7 @@ export function RechargeFormCard({
                                 ? `${method.name}. ${disabledReason}`
                                 : method.name
                             }
-                            className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
+                            className='disabled:border-border disabled:bg-muted disabled:text-muted-foreground dark:disabled:border-border dark:disabled:bg-muted h-20 min-w-0 justify-center gap-3 rounded-lg border-blue-600 bg-blue-600 px-3 py-2 text-left font-semibold text-white shadow-sm hover:border-blue-700 hover:bg-blue-700 hover:text-white focus-visible:ring-blue-400/50 disabled:opacity-70 disabled:shadow-none dark:border-blue-500 dark:bg-blue-600 dark:hover:border-blue-400 dark:hover:bg-blue-500'
                           >
                             {methodIcon}
                             <span className='flex min-w-0 flex-col items-start gap-0.5'>

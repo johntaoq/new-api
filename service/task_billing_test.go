@@ -60,6 +60,8 @@ func TestMain(m *testing.M) {
 		&model.UserSubscription{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
+		&model.UserQuotaFunding{}, &model.UserBalanceLedger{}, &model.FinancialAuditLog{},
+		&model.ChannelCostLedger{}, &model.ChannelCostAllocation{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -75,6 +77,9 @@ func truncate(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		model.DB.Exec("DELETE FROM tasks")
+		for _, table := range []string{"user_quota_fundings", "user_balance_ledgers", "financial_audit_logs", "channel_cost_ledgers", "channel_cost_allocations"} {
+			model.DB.Exec("DELETE FROM " + table)
+		}
 		model.DB.Exec("DELETE FROM users")
 		model.DB.Exec("DELETE FROM tokens")
 		model.DB.Exec("DELETE FROM logs")

@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 
+import { UserPasswordDialog } from './components/user-password-dialog'
 import { UsersDeleteDialog } from './components/users-delete-dialog'
 import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
@@ -28,7 +29,7 @@ import { UsersTable } from './components/users-table'
 
 function UsersContent() {
   const { t } = useTranslation()
-  const { open, setOpen, currentRow } = useUsers()
+  const { open, setOpen, currentRow, triggerRefresh } = useUsers()
 
   return (
     <>
@@ -48,6 +49,14 @@ function UsersContent() {
         currentRow={open === 'update' ? currentRow || undefined : undefined}
       />
       <UsersDeleteDialog />
+      {open === 'reset-password' && currentRow && (
+        <UserPasswordDialog
+          key={currentRow.id}
+          user={currentRow}
+          onClose={() => setOpen(null)}
+          onSuccess={triggerRefresh}
+        />
+      )}
     </>
   )
 }

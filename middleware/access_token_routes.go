@@ -121,6 +121,14 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"DELETE /api/user/:id/reset_passkey":               accessTokenScopeRule("user:write"),
 	"GET /api/user/2fa/stats":                          accessTokenScopeRule("user:read"),
 	"DELETE /api/user/:id/2fa":                         accessTokenScopeRule("user:write"),
+	"POST /api/user/:id/password":                      accessTokenScopeRule("user:write"),
+
+	// router/finance-router.go: user-owned statements
+	"GET /api/finance/self/statements":         accessTokenScopeRule("wallet:read"),
+	"GET /api/finance/self/statements/details": accessTokenScopeRule("wallet:read"),
+	"GET /api/finance/self/statements/export":  accessTokenScopeRule("wallet:read"),
+	"GET /api/finance/self/current":            accessTokenScopeRule("wallet:read"),
+	"GET /api/finance/self/current/export":     accessTokenScopeRule("wallet:read"),
 
 	// router/api-router.go: /api/subscription
 	"GET /api/subscription/plans":                                    accessTokenScopeRule("wallet:read"),
@@ -235,6 +243,8 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	// router/api-router.go: /api/audit, /api/log, /api/data
 	"GET /api/audit/self":                       accessTokenScopeRule("usage:read"),
 	"GET /api/log/":                             accessTokenScopeRule("log:read"),
+	"GET /api/log/detail":                       accessTokenScopeRule("log:read"),
+	"GET /api/log/self/detail":                  accessTokenScopeRule("usage:read"),
 	"GET /api/log/stat":                         accessTokenScopeRule("log:read"),
 	"GET /api/log/self/stat":                    accessTokenScopeRule("usage:read"),
 	"GET /api/log/channel_affinity_usage_cache": accessTokenScopeRule("log:read"),

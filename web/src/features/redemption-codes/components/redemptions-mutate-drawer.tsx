@@ -42,6 +42,13 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Sheet,
   SheetClose,
   SheetContent,
@@ -50,18 +57,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import {
-  formatQuotaWithCurrency,
-  getCurrencyDisplay,
-  getCurrencyLabel,
-} from '@/lib/currency'
-import {
-  formatQuota,
-  getEditableQuotaStep,
-  parseQuotaFromDollars,
-} from '@/lib/format'
+import { toIntlLocale } from '@/i18n/languages'
+import { formatNumber } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { addTimeToDate } from '@/lib/time'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { createRedemption, updateRedemption, getRedemption } from '../api'
 import { SUCCESS_MESSAGES } from '../constants'
@@ -90,7 +90,9 @@ export function RedemptionsMutateDrawer({
   onOpenChange,
   currentRow,
 }: RedemptionsMutateDrawerProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const config = useSystemConfigStore((s) => s.config.currency)
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const isUpdate = !!currentRow
   const redemptionId = currentRow?.id
   const { triggerRefresh } = useRedemptions()
@@ -119,7 +121,10 @@ export function RedemptionsMutateDrawer({
     }
 
     if (!isUpdate || redemptionId === undefined) {
-      form.reset(REDEMPTION_FORM_DEFAULT_VALUES)
+      form.reset({
+        ...REDEMPTION_FORM_DEFAULT_VALUES,
+        currency: config.quotaDisplayType === 'CNY' ? 'CNY' : 'USD',
+      })
       setRedemptionLoadState('ready')
       setLoadedRedemption(null)
       return
@@ -159,12 +164,30 @@ export function RedemptionsMutateDrawer({
     return () => {
       ignoreResult = true
     }
-  }, [open, isUpdate, redemptionId, form, t])
+  }, [open, isUpdate, redemptionId, form, t, config.quotaDisplayType])
 
   const isUpdateReady =
     !isUpdate ||
     (redemptionLoadState === 'ready' && loadedRedemption?.id === redemptionId)
   const isLoadingRedemption = redemptionLoadState === 'loading'
+  const fundingType = form.watch('funding_type')
+  const selectedCurrency = form.watch('currency')
+  const faceAmount = form.watch('quota_dollars')
+  const faceUSD =
+    selectedCurrency === 'CNY'
+      ? faceAmount / config.usdExchangeRate
+      : faceAmount
+  const validRate =
+    Number.isFinite(config.usdExchangeRate) && config.usdExchangeRate > 0
+  useEffect(() => {
+    if (isUpdate || form.getFieldState('recognized_revenue_usd').isDirty) return
+    form.setValue(
+      'recognized_revenue_usd',
+      fundingType === 'paid' && Number.isFinite(faceUSD)
+        ? Number(faceUSD.toFixed(6))
+        : 0
+    )
+  }, [fundingType, faceUSD, form, isUpdate])
 
   const onSubmit = async (data: RedemptionFormValues) => {
     if (isUpdate && (!currentRow || !loadedRedemption || !isUpdateReady)) {
@@ -176,11 +199,14 @@ export function RedemptionsMutateDrawer({
       const basePayload = transformFormDataToPayload(data)
 
       if (isUpdate && currentRow && loadedRedemption) {
-        const quota = form.getFieldState('quota_dollars').isDirty
-          ? basePayload.quota
-          : loadedRedemption.quota
+        const faceChanged =
+          form.getFieldState('quota_dollars').isDirty ||
+          form.getFieldState('currency').isDirty
+        const quota = faceChanged ? basePayload.quota : loadedRedemption.quota
         const result = await updateRedemption({
           ...basePayload,
+          currency: faceChanged ? basePayload.currency : undefined,
+          input_amount: faceChanged ? basePayload.input_amount : undefined,
           quota,
           id: currentRow.id,
         })
@@ -207,9 +233,7 @@ export function RedemptionsMutateDrawer({
             setCreatedCodes({
               keys: result.data,
               name: basePayload.name,
-              quota: formatQuotaWithCurrency(basePayload.quota, {
-                abbreviate: false,
-              }),
+              quota: `${formatNumber(data.quota_dollars, locale)} ${data.currency}`,
             })
           }
           onOpenChange(false)
@@ -229,8 +253,15 @@ export function RedemptionsMutateDrawer({
     if (!isUpdate) {
       const name = form.getValues('name')
       if (!name?.trim()) {
-        const quota = parseQuotaFromDollars(form.getValues('quota_dollars'))
-        form.setValue('name', formatQuota(quota), { shouldValidate: true })
+        const data = form.getValues()
+        form.setValue(
+          'name',
+          `${data.funding_type === 'paid' ? 'Paid' : 'Free'} ${data.currency} ${data.quota_dollars}`.slice(
+            0,
+            20
+          ),
+          { shouldValidate: true }
+        )
       }
     }
 
@@ -242,14 +273,10 @@ export function RedemptionsMutateDrawer({
     form.setValue('expired_time', newDate)
   }
 
-  const { meta: currencyMeta } = getCurrencyDisplay()
-  const currencyLabel = getCurrencyLabel()
-  const tokensOnly = currencyMeta.kind === 'tokens'
-  const quotaStep = getEditableQuotaStep()
-  const quotaLabel = t('Quota ({{currency}})', { currency: currencyLabel })
-  const quotaPlaceholder = tokensOnly
-    ? t('Enter quota in tokens')
-    : t('Enter quota in {{currency}}', { currency: currencyLabel })
+  const quotaLabel = t('Quota ({{currency}})', { currency: selectedCurrency })
+  const quotaPlaceholder = t('Enter quota in {{currency}}', {
+    currency: selectedCurrency,
+  })
   let submitButtonLabel = t('Save changes')
   if (isLoadingRedemption) {
     submitButtonLabel = t('Loading...')
@@ -300,6 +327,121 @@ export function RedemptionsMutateDrawer({
                 <SideDrawerSection>
                   <FormField
                     control={form.control}
+                    name='funding_type'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Funding type')}</FormLabel>
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          items={[
+                            { value: 'gift', label: t('Gift voucher') },
+                            { value: 'paid', label: t('Paid voucher') },
+                          ]}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value='gift'>
+                              {t('Gift voucher')}
+                            </SelectItem>
+                            <SelectItem value='paid'>
+                              {t('Paid voucher')}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='currency'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Currency')}</FormLabel>
+                        <Select
+                          value={field.value}
+                          items={[
+                            { value: 'CNY', label: 'CNY' },
+                            { value: 'USD', label: 'USD' },
+                          ]}
+                          onValueChange={(value) => {
+                            if (
+                              !validRate ||
+                              (value !== 'CNY' && value !== 'USD') ||
+                              value === field.value
+                            ) {
+                              return
+                            }
+                            form.setValue(
+                              'quota_dollars',
+                              Number(
+                                (value === 'CNY'
+                                  ? faceUSD * config.usdExchangeRate
+                                  : faceUSD
+                                ).toFixed(6)
+                              ),
+                              { shouldDirty: true, shouldValidate: true }
+                            )
+                            field.onChange(value)
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value='CNY'>CNY</SelectItem>
+                            <SelectItem value='USD'>USD</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {fundingType === 'paid' && (
+                    <FormField
+                      control={form.control}
+                      name='recognized_revenue_usd'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Recognized revenue (USD)')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              type='number'
+                              min={0}
+                              step={0.000001}
+                              onChange={(event) =>
+                                field.onChange(Number(event.target.value))
+                              }
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                  <FormField
+                    control={form.control}
+                    name='remark'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Remark')}</FormLabel>
+                        <FormControl>
+                          <Input {...field} maxLength={255} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
                     name='name'
                     render={({ field }) => (
                       <FormItem>
@@ -325,7 +467,7 @@ export function RedemptionsMutateDrawer({
                           <Input
                             {...field}
                             type='number'
-                            step={quotaStep}
+                            step='any'
                             placeholder={quotaPlaceholder}
                             onChange={(e) =>
                               field.onChange(
@@ -335,11 +477,19 @@ export function RedemptionsMutateDrawer({
                           />
                         </FormControl>
                         <FormDescription>
-                          {tokensOnly
-                            ? t('Enter the quota amount in tokens')
-                            : t('Enter the quota amount in {{currency}}', {
-                                currency: currencyLabel,
-                              })}
+                          {validRate && Number.isFinite(faceUSD) && (
+                            <span>
+                              {formatNumber(Number(faceUSD.toFixed(6)), locale)}{' '}
+                              USD ={' '}
+                              {formatNumber(
+                                Number(
+                                  (faceUSD * config.usdExchangeRate).toFixed(6)
+                                ),
+                                locale
+                              )}{' '}
+                              CNY
+                            </span>
+                          )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -445,7 +595,7 @@ export function RedemptionsMutateDrawer({
             <Button
               form='redemption-form'
               type='submit'
-              disabled={isSubmitting || !isUpdateReady}
+              disabled={isSubmitting || !isUpdateReady || !validRate}
             >
               {submitButtonLabel}
             </Button>

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import i18next from 'i18next'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 
 import { handleServerError } from '@/lib/handle-server-error'
@@ -62,7 +62,8 @@ const defaultPaymentAmountCalculators: PaymentAmountCalculators = {
 export async function requestPaymentAmount(
   topupAmount: number,
   paymentType: string,
-  calculators: PaymentAmountCalculators = defaultPaymentAmountCalculators
+  calculators: PaymentAmountCalculators = defaultPaymentAmountCalculators,
+  currency?: 'CNY' | 'USD'
 ): Promise<number> {
   let calculator = calculators.regular
   if (isStripePayment(paymentType)) {
@@ -73,7 +74,11 @@ export async function requestPaymentAmount(
     calculator = calculators.waffoPancake
   }
 
-  const response = await calculator({ amount: topupAmount })
+  const request: AmountRequest = { amount: topupAmount }
+  if (calculator === calculators.regular && currency) {
+    request.currency = currency
+  }
+  const response = await calculator(request)
   if (!isApiSuccess(response) || !response.data) {
     return 0
   }
@@ -81,30 +86,36 @@ export async function requestPaymentAmount(
   return Number.parseFloat(response.data)
 }
 
-export function usePayment() {
+export function usePayment(currency?: 'CNY' | 'USD') {
   const [amount, setAmount] = useState<number>(0)
   const [calculating, setCalculating] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const calculationSequence = useRef(0)
 
   // Calculate payment amount
   const calculatePaymentAmount = useCallback(
     async (topupAmount: number, paymentType: string) => {
+      const sequence = ++calculationSequence.current
       try {
         setCalculating(true)
         const calculatedAmount = await requestPaymentAmount(
           topupAmount,
-          paymentType
+          paymentType,
+          defaultPaymentAmountCalculators,
+          currency
         )
-        setAmount(calculatedAmount)
+        if (sequence === calculationSequence.current) {
+          setAmount(calculatedAmount)
+        }
         return calculatedAmount
       } catch {
-        setAmount(0)
+        if (sequence === calculationSequence.current) setAmount(0)
         return 0
       } finally {
-        setCalculating(false)
+        if (sequence === calculationSequence.current) setCalculating(false)
       }
     },
-    []
+    [currency]
   )
 
   // Process payment
@@ -124,6 +135,7 @@ export function usePayment() {
           : await requestPayment({
               amount,
               payment_method: paymentType,
+              currency,
             })
 
         if (!isApiSuccess(response)) {
@@ -156,7 +168,7 @@ export function usePayment() {
         setProcessing(false)
       }
     },
-    []
+    [currency]
   )
 
   return {

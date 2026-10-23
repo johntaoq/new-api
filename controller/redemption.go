@@ -3,7 +3,6 @@ package controller
 import (
 	"net/http"
 	"strconv"
-	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -72,10 +71,6 @@ func AddRedemption(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if utf8.RuneCountInString(redemption.Name) == 0 || utf8.RuneCountInString(redemption.Name) > 20 {
-		common.ApiErrorT(c, "Redemption code name length must be between 1-20")
-		return
-	}
 	if redemption.Count <= 0 {
 		common.ApiErrorT(c, "Redemption code count must be greater than 0")
 		return
@@ -84,11 +79,15 @@ func AddRedemption(c *gin.Context) {
 		common.ApiErrorT(c, "Maximum 100 redemption codes can be generated at once")
 		return
 	}
-	if redemption.Quota <= 0 {
-		common.ApiErrorT(c, "Redemption quota must be positive")
-		return
+	redemption.QuotaPerUnitSnapshot = common.QuotaPerUnit
+	redemption.ExchangeRate = 0
+	if redemption.Currency != "" {
+		if err := redemption.SetFinanceFaceValue(redemption.Currency, redemption.InputAmount); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
-	if err := common.ValidateWalletQuota(redemption.Quota); err != nil {
+	if err := redemption.ValidateFinance(); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -96,24 +95,11 @@ func AddRedemption(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	var keys []string
-	for i := 0; i < redemption.Count; i++ {
-		key := common.GetUUID()
-		cleanRedemption := model.Redemption{
-			UserId:      c.GetInt("id"),
-			Name:        redemption.Name,
-			Key:         key,
-			CreatedTime: common.GetTimestamp(),
-			Quota:       redemption.Quota,
-			ExpiredTime: redemption.ExpiredTime,
-		}
-		err = cleanRedemption.Insert()
-		if err != nil {
-			common.SysError(common.LogText("failed to insert redemption: %s", err.Error()))
-			common.ApiErrorStatus(c, http.StatusOK, common.NewMessage("Failed to create redemption code, please try again later"), gin.H{"data": keys})
-			return
-		}
-		keys = append(keys, key)
+	keys, err := model.CreateRedemptionsWithAudit(redemption, redemption.Count,
+		model.FinancialAuditOperator{UserId: c.GetInt("id"), UsernameSnapshot: c.GetString("username")})
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	recordManageAudit(c, "redemption.create", map[string]any{
 		"name":  redemption.Name,
@@ -130,7 +116,8 @@ func AddRedemption(c *gin.Context) {
 
 func DeleteRedemption(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	err := model.DeleteRedemptionById(id)
+	err := model.DeleteRedemptionByIdWithAudit(id,
+		model.FinancialAuditOperator{UserId: c.GetInt("id"), UsernameSnapshot: c.GetString("username")})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -156,27 +143,42 @@ func UpdateRedemption(c *gin.Context) {
 		return
 	}
 	if statusOnly == "" {
-		if redemption.Quota <= 0 {
-			common.ApiErrorT(c, "Redemption quota must be positive")
-			return
-		}
-		if err := common.ValidateWalletQuota(redemption.Quota); err != nil {
-			common.ApiError(c, err)
-			return
-		}
 		if err := validateExpiredTime(redemption.ExpiredTime); err != nil {
 			common.ApiError(c, err)
 			return
 		}
 		// If you add more fields, please also update redemption.Update()
 		cleanRedemption.Name = redemption.Name
-		cleanRedemption.Quota = redemption.Quota
+		if redemption.Currency != "" {
+			if redemption.Currency != cleanRedemption.Currency || redemption.InputAmount != cleanRedemption.InputAmount {
+				if err := cleanRedemption.SetFinanceFaceValue(redemption.Currency, redemption.InputAmount); err != nil {
+					common.ApiError(c, err)
+					return
+				}
+			}
+		} else if redemption.Quota != cleanRedemption.Quota {
+			cleanRedemption.Quota = redemption.Quota
+			cleanRedemption.QuotaPerUnitSnapshot = common.QuotaPerUnit
+			cleanRedemption.Currency, cleanRedemption.InputAmount, cleanRedemption.ExchangeRate = "", 0, 0
+		}
 		cleanRedemption.ExpiredTime = redemption.ExpiredTime
+		// Older clients omit these fields; preserve the voucher's classification.
+		if redemption.FundingType != "" {
+			cleanRedemption.FundingType = redemption.FundingType
+			cleanRedemption.RecognizedRevenueUSD = redemption.RecognizedRevenueUSD
+			cleanRedemption.Remark = redemption.Remark
+		}
+		cleanRedemption.AmountUSD = redemption.AmountUSD
+		if err := cleanRedemption.ValidateFinance(); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	if statusOnly != "" {
 		cleanRedemption.Status = redemption.Status
 	}
-	err = cleanRedemption.Update()
+	cleanRedemption, err = model.UpdateRedemptionWithAudit(*cleanRedemption, statusOnly != "",
+		model.FinancialAuditOperator{UserId: c.GetInt("id"), UsernameSnapshot: c.GetString("username")})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -190,7 +192,8 @@ func UpdateRedemption(c *gin.Context) {
 }
 
 func DeleteInvalidRedemption(c *gin.Context) {
-	rows, err := model.DeleteInvalidRedemptions()
+	rows, err := model.DeleteInvalidRedemptionsWithAudit(
+		model.FinancialAuditOperator{UserId: c.GetInt("id"), UsernameSnapshot: c.GetString("username")})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -218,7 +221,8 @@ func DeleteRedemptionBatch(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	count, err := model.BatchDeleteRedemptions(request.Ids)
+	count, err := model.BatchDeleteRedemptionsWithAudit(request.Ids,
+		model.FinancialAuditOperator{UserId: c.GetInt("id"), UsernameSnapshot: c.GetString("username")})
 	if err != nil {
 		common.ApiError(c, err)
 		return

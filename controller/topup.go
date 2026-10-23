@@ -115,6 +115,8 @@ func GetTopUpInfo(c *gin.Context) {
 		"creem_products":          setting.CreemProducts,
 		"pay_methods":             payMethods,
 		"min_topup":               operation_setting.MinTopUp,
+		"min_topup_cny":           max(10, operation_setting.MinTopUp),
+		"recharge_rate":           operation_setting.USDExchangeRate,
 		"stripe_min_topup":        setting.StripeMinTopUp,
 		"waffo_min_topup":         setting.WaffoMinTopUp,
 		"waffo_pancake_min_topup": setting.WaffoPancakeMinTopUp,
@@ -128,10 +130,12 @@ func GetTopUpInfo(c *gin.Context) {
 type EpayRequest struct {
 	Amount        int64  `json:"amount"`
 	PaymentMethod string `json:"payment_method"`
+	Currency      string `json:"currency"`
 }
 
 type AmountRequest struct {
-	Amount int64 `json:"amount"`
+	Amount   int64  `json:"amount"`
+	Currency string `json:"currency"`
 }
 
 func GetEpayClient() *epay.Client {
@@ -287,25 +291,25 @@ func RequestEpay(c *gin.Context) {
 		paymentError(c, common.NewMessage("Invalid parameters"))
 		return
 	}
-	if req.Amount < getMinTopup() {
-		paymentError(c, common.NewMessage("Top-up amount cannot be less than {{min}}", map[string]any{"min": getMinTopup()}))
-		return
-	}
 	id := c.GetInt("id")
-	if rejectInvalidTopUpQuota(c, id, req.Amount) {
+
+	if req.Currency == "" && rejectInvalidTopUpQuota(c, id, req.Amount) {
 		return
 	}
-
 	group, err := model.GetUserGroup(id, true)
 	if err != nil {
 		paymentError(c, common.NewMessage("Failed to get the user group"))
 		return
 	}
-	payMoney := getPayMoney(req.Amount, group)
-	if payMoney < 0.01 {
-		paymentError(c, common.NewMessage("Payment amount is too low"))
+	calculation, err := calculateFinanceTopup(req.Amount, req.Currency, group)
+	if err == nil {
+		err = model.ValidateTopUpQuotaCapacity(id, int(calculation.Quota))
+	}
+	if err != nil {
+		paymentError(c, err)
 		return
 	}
+	payMoney := calculation.Money
 
 	if !operation_setting.ContainsPayMethod(req.PaymentMethod) {
 		paymentError(c, common.NewMessage("Payment method does not exist"))
@@ -336,16 +340,12 @@ func RequestEpay(c *gin.Context) {
 		paymentError(c, common.NewMessage("Failed to start payment"))
 		return
 	}
-	amount := req.Amount
-	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		dAmount := decimal.NewFromInt(int64(amount))
-		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-		amount = dAmount.Div(dQuotaPerUnit).IntPart()
-	}
 	topUp := &model.TopUp{
-		UserId:          id,
-		Amount:          amount,
-		Money:           payMoney,
+		UserId:      id,
+		Amount:      calculation.Amount,
+		Money:       payMoney,
+		InputAmount: calculation.InputAmount, Currency: calculation.Currency,
+		ExchangeRate: calculation.ExchangeRate, Quota: calculation.Quota, RevenueUSD: calculation.RevenueUSD,
 		TradeNo:         tradeNo,
 		PaymentMethod:   req.PaymentMethod,
 		PaymentProvider: model.PaymentProviderEpay,
@@ -504,12 +504,8 @@ func RequestAmount(c *gin.Context) {
 		return
 	}
 
-	if req.Amount < getMinTopup() {
-		paymentError(c, common.NewMessage("Top-up amount cannot be less than {{min}}", map[string]any{"min": getMinTopup()}))
-		return
-	}
 	id := c.GetInt("id")
-	if rejectInvalidTopUpQuota(c, id, req.Amount) {
+	if req.Currency == "" && rejectInvalidTopUpQuota(c, id, req.Amount) {
 		return
 	}
 	group, err := model.GetUserGroup(id, true)
@@ -517,11 +513,15 @@ func RequestAmount(c *gin.Context) {
 		paymentError(c, common.NewMessage("Failed to get the user group"))
 		return
 	}
-	payMoney := getPayMoney(req.Amount, group)
-	if payMoney <= 0.01 {
-		paymentError(c, common.NewMessage("Payment amount is too low"))
+	calculation, err := calculateFinanceTopup(req.Amount, req.Currency, group)
+	if err == nil {
+		err = model.ValidateTopUpQuotaCapacity(id, int(calculation.Quota))
+	}
+	if err != nil {
+		paymentError(c, err)
 		return
 	}
+	payMoney := calculation.Money
 	c.JSON(http.StatusOK, gin.H{"message": "success", "data": strconv.FormatFloat(payMoney, 'f', 2, 64)})
 }
 

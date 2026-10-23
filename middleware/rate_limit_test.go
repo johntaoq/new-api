@@ -2,10 +2,12 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -94,6 +96,60 @@ func TestRedisUserRateLimiterUsesSharedFixedWindow(t *testing.T) {
 	key := redisUserRateLimitKey("USER", 42)
 	assert.True(t, redisServer.Exists(key))
 	assert.Equal(t, 23*time.Second, redisServer.TTL(key))
+}
+
+func TestManagementRateLimitBudgets(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	previousAPIEnable, previousAPINum, previousAPIDuration := common.GlobalApiRateLimitEnable, common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration
+	previousCriticalEnable, previousCriticalNum, previousCriticalDuration := common.CriticalRateLimitEnable, common.CriticalRateLimitNum, common.CriticalRateLimitDuration
+	previousUserNum, previousUserDuration := common.UserCriticalRateLimitNum, common.UserCriticalRateLimitDuration
+	previousRedis := common.RedisEnabled
+	t.Cleanup(func() {
+		common.GlobalApiRateLimitEnable, common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration = previousAPIEnable, previousAPINum, previousAPIDuration
+		common.CriticalRateLimitEnable, common.CriticalRateLimitNum, common.CriticalRateLimitDuration = previousCriticalEnable, previousCriticalNum, previousCriticalDuration
+		common.UserCriticalRateLimitNum, common.UserCriticalRateLimitDuration = previousUserNum, previousUserDuration
+		common.RedisEnabled = previousRedis
+	})
+	common.GlobalApiRateLimitEnable, common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration = true, 6000, 180
+	common.CriticalRateLimitEnable, common.CriticalRateLimitNum, common.CriticalRateLimitDuration = true, 6000, 180
+	common.UserCriticalRateLimitNum, common.UserCriticalRateLimitDuration = 3000, 180
+	for _, backend := range []string{"memory", "redis"} {
+		t.Run(backend, func(t *testing.T) {
+			common.RedisEnabled = backend == "redis"
+			if common.RedisEnabled {
+				useRateLimitMiniRedis(t)
+			}
+			for i, tc := range []struct {
+				name    string
+				maximum int
+				handler gin.HandlerFunc
+			}{
+				{name: "api", maximum: 6000, handler: GlobalAPIRateLimit()},
+				{name: "sensitive", maximum: 6000, handler: CriticalRateLimit()},
+				{name: "account-security", maximum: 3000, handler: UserCriticalRateLimit("budget-security")},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					router := gin.New()
+					require.NoError(t, router.SetTrustedProxies(nil))
+					router.GET("/limited", func(c *gin.Context) { c.Set("id", 8300000+i) }, tc.handler,
+						func(c *gin.Context) { c.Status(http.StatusNoContent) })
+					remote := fmt.Sprintf("192.0.2.%d:12345", 100+i)
+					for request := range tc.maximum {
+						require.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/limited", remote).Code, "request %d", request+1)
+					}
+					response := performRateLimitRequest(router, "/limited", remote)
+					require.Equal(t, http.StatusTooManyRequests, response.Code)
+					retry, err := strconv.Atoi(response.Header().Get("Retry-After"))
+					require.NoError(t, err)
+					require.Greater(t, retry, 0)
+					require.LessOrEqual(t, retry, 180)
+					if tc.name == "account-security" {
+						require.Equal(t, http.StatusTooManyRequests, performRateLimitRequest(router, "/limited", "198.51.100.99:54321").Code, "changing IP must not reset the user's budget")
+					}
+				})
+			}
+		})
+	}
 }
 
 func TestRedisEmailVerificationRateLimiterPreservesResponseAndTTL(t *testing.T) {

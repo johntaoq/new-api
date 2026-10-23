@@ -204,6 +204,9 @@ test('successful batch creation opens export with returned codes and the configu
   fireEvent.change(within(createDialog).getByLabelText('Quota (CNY)'), {
     target: { value: '2000' },
   })
+  fireEvent.change(within(createDialog).getByLabelText('Remark'), {
+    target: { value: 'Customer promotion' },
+  })
   await user.click(
     within(createDialog).getByRole('button', { name: 'Save changes' })
   )
@@ -232,7 +235,7 @@ test('successful batch creation opens export with returned codes and the configu
     ).not.toBeInTheDocument()
   )
   expect(await readDownload(downloads[0])).toBe(
-    'batch\tcreatedA\t¥2,000\nbatch\tcreatedB\t¥2,000\n'
+    'batch\tcreatedA\t2,000 CNY\nbatch\tcreatedB\t2,000 CNY\n'
   )
 })
 
@@ -245,7 +248,11 @@ test('failed creation does not open a success export dialog', async () => {
   fireEvent.change(screen.getByLabelText('Name'), {
     target: { value: 'batch' },
   })
+  fireEvent.change(screen.getByLabelText('Remark'), {
+    target: { value: 'Customer promotion' },
+  })
   await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  await waitFor(() => expect(api.post).toHaveBeenCalledOnce())
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
   )

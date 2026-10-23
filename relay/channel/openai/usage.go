@@ -47,6 +47,29 @@ func applyUsagePostProcessing(info *relaycommon.RelayInfo, usage *dto.Usage, res
 				usage.PromptTokensDetails.CachedTokens = cachedTokens
 			}
 		}
+	case constant.ChannelTypeNewAPI:
+		applyNewAPIImageUsageFallback(info, usage)
+	}
+}
+
+func applyNewAPIImageUsageFallback(info *relaycommon.RelayInfo, usage *dto.Usage) {
+	if info == nil || usage == nil || usage.PromptTokens > 1 || usage.CompletionTokens > 0 {
+		return
+	}
+	if info.RequestURLPath != "/v1/images/generations" {
+		return
+	}
+	switch info.OriginModelName {
+	case "MAI-Image-2.6", "MAI-Image-2.6-Flash":
+		count := info.RequestedImageCount()
+		if count <= 0 {
+			count = 1
+		}
+		usage.PromptTokens = 5 * count
+		usage.CompletionTokens = 1024 * count
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	default:
+		return
 	}
 }
 

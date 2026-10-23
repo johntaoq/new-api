@@ -43,6 +43,8 @@ export const userSchema = z.object({
   telegram_id: z.string().optional(),
   email: z.string().optional(),
   quota: z.number(),
+  paid_quota: z.number().optional(),
+  gift_quota: z.number().optional(),
   used_quota: z.number(),
   request_count: z.number(),
   group: z.string(),
@@ -149,4 +151,4 @@ export interface ManageUserQuotaPayload {
 // Dialog Types
 // ============================================================================
 
-export type UsersDialogType = 'create' | 'update' | 'delete'
+export type UsersDialogType = 'create' | 'update' | 'delete' | 'reset-password'

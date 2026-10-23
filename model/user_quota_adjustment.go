@@ -22,7 +22,7 @@ type UserQuotaAdjustment struct {
 	After    int
 }
 
-func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuotaAdjustment, error) {
+func AdjustUserQuota(userID, operatorRole int, mode string, value int, operators ...FinancialAuditOperator) (*UserQuotaAdjustment, error) {
 	if userID <= 0 || (mode != "add" && mode != "subtract" && mode != "override") {
 		return nil, ErrInvalidUserQuotaAdjustment
 	}
@@ -45,6 +45,14 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 		if user.Quota > common.MaxWalletQuota || user.Quota < -common.MaxWalletQuota {
 			return ErrWalletQuotaLimitExceeded
 		}
+		if err := ensureLegacyQuotaFundingCoverageTx(tx, &user); err != nil {
+			return err
+		}
+		before := buildFinancialAuditUserQuotaSnapshot(user)
+		operator := FinancialAuditOperator{}
+		if len(operators) > 0 {
+			operator = operators[0]
+		}
 		quota := decimal.NewFromInt(int64(value))
 		switch mode {
 		case "add":
@@ -56,19 +64,51 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 		if err != nil {
 			return ErrWalletQuotaLimitExceeded
 		}
-		// An unchanged override is a successful operation, including on MySQL
-		// configurations that count only changed rows in RowsAffected.
-		if after != user.Quota {
-			result := tx.Model(&User{}).Where("id = ?", userID).Update("quota", after)
-			if result.Error != nil {
-				return result.Error
+		delta := after - user.Quota
+		if delta > 0 {
+			for remaining := delta; remaining > 0; {
+				amount := min(remaining, common.MaxWalletQuota)
+				if _, err := grantUserQuotaTx(tx, QuotaFundingGrantParams{
+					UserId: userID, FundingType: QuotaFundingTypeGift,
+					SourceType: QuotaFundingSourceAdminGrant, GrantedQuota: amount,
+					OperatorUserId: operator.UserId, OperatorUsernameSnapshot: operator.UsernameSnapshot,
+					BalanceEntryType: CustomerMonthlyStatementEntryTypeAdjustment,
+				}); err != nil {
+					return err
+				}
+				remaining -= amount
 			}
-			if result.RowsAffected != 1 {
-				return gorm.ErrRecordNotFound
+		} else if delta < 0 {
+			for remaining := -delta; remaining > 0; {
+				amount := min(remaining, common.MaxWalletQuota)
+				allocations, err := consumeUserQuotaTx(tx, userID, amount, true)
+				if err != nil {
+					return err
+				}
+				paid, gift, _ := SumQuotaFundingAllocations(allocations)
+				for bucket, quota := range map[string]int{QuotaFundingTypePaid: paid, QuotaFundingTypeGift: gift} {
+					if err := createUserBalanceLedgerTx(tx, RecordUserBalanceLedgerParams{
+						UserId: userID, BucketType: bucket, AmountQuota: -quota,
+						EntryType:  CustomerMonthlyStatementEntryTypeAdjustment,
+						SourceType: QuotaFundingSourceSystemAdjust, OperatorUserId: operator.UserId,
+						OperatorUsernameSnapshot: operator.UsernameSnapshot,
+					}); err != nil {
+						return err
+					}
+				}
+				remaining -= amount
 			}
 		}
 		adjustment = UserQuotaAdjustment{UserID: user.Id, Username: user.Username, Before: user.Quota, After: after}
-		return nil
+		if err := tx.First(&user, userID).Error; err != nil {
+			return err
+		}
+		return recordFinancialAuditTx(tx, RecordFinancialAuditParams{
+			Module: FinancialAuditModuleUserQuota, Action: FinancialAuditActionAdjust,
+			OperatorUserId: operator.UserId, OperatorUsernameSnapshot: operator.UsernameSnapshot,
+			TargetType: FinancialAuditTargetUserWallet, TargetId: userID, TargetUserId: userID,
+			Before: before, After: buildFinancialAuditUserQuotaSnapshot(user),
+		})
 	})
 	if err != nil {
 		return nil, err
