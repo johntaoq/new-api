@@ -115,6 +115,18 @@ export interface ToolSurchargeItem {
 }
 
 export interface LogOtherData {
+  billing_category?: string
+  storage_invoice?: {
+    invoice_id: string
+    billing_month: string
+    peak_bytes: number
+    unit_price_cents_per_gib: number
+    amount_cents: number
+    quota_per_usd: number
+    cny_per_usd: number
+    balance_before: number
+    balance_after: number
+  }
   admin_info?: {
     request_policy?: PolicyEvent[]
     is_multi_key?: boolean

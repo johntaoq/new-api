@@ -124,7 +124,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 			}
 		}
 		countClaudeStreamBillableTools(info, &claudeResponse)
-		helper.ClaudeChunkData(c, claudeResponse, data)
+		helper.ClaudeChunkData(c, claudeResponse, relaycommon.FilterCopilotResponseMetadataString(info, data))
 	} else if info.RelayFormat == types.RelayFormatOpenAI {
 		state, err := claudeToChatStreamState(info)
 		if err != nil {
@@ -421,7 +421,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 	}
 
-	service.IOCopyBytesGracefully(c, httpResp, responseData)
+	service.IOCopyBytesGracefully(c, httpResp, relaycommon.FilterCopilotResponseMetadata(info, responseData))
 	return nil
 }
 

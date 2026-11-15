@@ -109,6 +109,24 @@ test('shows the recorded request and response models in log details', () => {
   queryClient.clear()
 })
 
+test('storage details show the invoice and price instead of inference billing and timing', () => {
+  const queryClient = renderDetails({
+    billing_category: 'pic365_storage',
+    storage_invoice: {
+      invoice_id: 'storage-invoice-0001', billing_month: '2026-11', peak_bytes: 2**30,
+      unit_price_cents_per_gib: 300, amount_cents: 300, quota_per_usd: 500000,
+      cny_per_usd: 7, balance_before: 1000000, balance_after: 785714,
+    },
+  })
+  expect(screen.getByText('Pic365 storage')).toBeVisible()
+  expect(screen.getByText('CNY 3.00/GiB')).toBeVisible()
+  expect(screen.getByText('CNY 3.00')).toBeVisible()
+  expect(screen.getByText('storage-invoice-0001')).toBeVisible()
+  expect(screen.queryByText('Billing Details')).not.toBeInTheDocument()
+  expect(screen.queryByText('Timing')).not.toBeInTheDocument()
+  queryClient.clear()
+})
+
 describe('usage facts billing details', () => {
   test('shows the settled image count and a per-image price', () => {
     const queryClient = renderDetails({

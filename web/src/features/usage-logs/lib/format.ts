@@ -25,6 +25,8 @@ import {
   type ParsedTier,
 } from '@/features/pricing/lib/billing-expr'
 import { translateServerText } from '@/lib/server-error-message'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import { formatLogQuota } from '@/lib/format'
 
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
@@ -256,6 +258,7 @@ export function formatModelName(log: UsageLog): {
   responseModel?: LogOtherData['response_model']
 } {
   const other = parseUsageLogOther(log)
+  if (isPic365StorageLog(log)) return { name: 'Pic365 storage', isMapped: false }
   const isMapped = !!(
     other?.is_model_mapped &&
     other?.upstream_model_name &&
@@ -268,6 +271,18 @@ export function formatModelName(log: UsageLog): {
     actualModel: isMapped ? other.upstream_model_name : undefined,
     responseModel: other?.response_model,
   }
+}
+
+export function isPic365StorageLog(log: UsageLog): boolean {
+  return log.type === 2 && log.model_name === 'pic365-storage' &&
+    parseUsageLogOther(log)?.billing_category === 'pic365_storage'
+}
+
+export function formatUsageLogQuota(quota: number, other: LogOtherData | null): string {
+  const storage = other?.billing_category === 'pic365_storage' ? other.storage_invoice : null
+  return storage && Number.isFinite(storage.quota_per_usd) && storage.quota_per_usd > 0
+    ? formatBillingCurrencyFromUSD(quota / storage.quota_per_usd, { digitsLarge: 4, digitsSmall: 6, abbreviate: false })
+    : formatLogQuota(quota)
 }
 
 /**

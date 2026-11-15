@@ -28,8 +28,26 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { EnterpriseHome } from './components/sections/enterprise-home'
 import { useHomePageContent } from './hooks'
+import { getStaticHomePath } from './lib/static-home'
 
 export function Home() {
+  const staticHomePath = getStaticHomePath(window.location.hostname)
+
+  useEffect(() => {
+    if (staticHomePath) {
+      // Nginx serves this host's homepage only on a full document request.
+      window.location.replace(staticHomePath)
+    }
+  }, [staticHomePath])
+
+  if (staticHomePath) {
+    return null
+  }
+
+  return <NewApiHome />
+}
+
+function NewApiHome() {
   const { i18n, t } = useTranslation()
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const { resolvedTheme } = useTheme()

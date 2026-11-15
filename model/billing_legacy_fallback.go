@@ -22,6 +22,7 @@ type legacyBillingUserSnapshot struct {
 func loadLegacyBillingLogs(periodStart int64, periodEnd int64) ([]*Log, error) {
 	var logs []*Log
 	if err := LOG_DB.Where("created_at >= ? AND created_at <= ? AND type IN ?", periodStart, periodEnd, []int{LogTypeConsume, LogTypeRefund}).
+		Where("model_name <> ?", Pic365StorageModel).
 		Order("created_at asc, id asc").
 		Find(&logs).Error; err != nil {
 		return nil, err

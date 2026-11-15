@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Pic365 storage": "Pic365 存储",
+    "Peak storage": "峰值容量",
+    "Pic365 storage fee: {{month}}, CNY {{amount}}, invoice {{invoice}}": "Pic365 存储费：{{month}}，人民币 {{amount}} 元，账单 {{invoice}}",
+    "Pic365": "Pic365",
+    "Pic365 Image Generation": "Pic365生图",
+    "Pic365 pop-up was blocked": "浏览器拦截了 Pic365，请允许弹出窗口后重试",
+    "Opening Pic365": "正在进入 Pic365",
+    "Pic365 authorization is unavailable": "Pic365 授权失败，请从控制台重新进入",
     "System adjustment": "系统修正",
     "Current month details": "本月明细",
     "Not finalized": "尚未出账",
@@ -5954,6 +5962,7 @@
     "Streaming": "流式输出",
     "String Replace": "字符串替换",
     "Strip {{affix}}": "去掉 {{affix}}",
+    "Strip Copilot response metadata": "清理 Copilot 扩展字段",
     "Strip prefix": "去掉前缀",
     "Strip suffix": "去掉后缀",
     "Stripe": "Stripe",

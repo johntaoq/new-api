@@ -301,6 +301,9 @@ func AppendFinanceAllocations(other *LogOther, allocations []types.QuotaFundingA
 }
 
 func recordFinanceUsageLog(log *Log) error {
+	if log.ModelName == Pic365StorageModel {
+		return nil
+	}
 	if log.Quota <= 0 || (log.Type != LogTypeConsume && log.Type != LogTypeRefund) {
 		return nil
 	}

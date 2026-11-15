@@ -30,6 +30,24 @@ func SummarizeLogs(logs []*Log) {
 			continue
 		}
 		result := make(map[string]json.RawMessage)
+		var category string
+		if log.Type == LogTypeConsume && log.ModelName == Pic365StorageModel &&
+			common.Unmarshal(other["billing_category"], &category) == nil && category == Pic365StorageCategory {
+			result["billing_category"] = other["billing_category"]
+			var invoice map[string]json.RawMessage
+			if common.Unmarshal(other["storage_invoice"], &invoice) == nil {
+				selected := make(map[string]json.RawMessage)
+				for _, key := range strings.Fields(`invoice_id billing_month usage_date peak_bytes unit_price_cents_per_gib target_cents
+					amount_cents quota quota_per_usd cny_per_usd balance_before balance_after created_at log_published`) {
+					if value := invoice[key]; len(value) > 0 && len(value) <= 128 {
+						selected[key] = value
+					}
+				}
+				if value, err := common.Marshal(selected); err == nil {
+					result["storage_invoice"] = value
+				}
+			}
+		}
 		for _, key := range strings.Fields(`model_ratio completion_ratio model_price group_ratio user_group_ratio
 			cache_ratio cache_creation_ratio cache_creation_ratio_5m cache_creation_ratio_1h
 			cache_tokens image_cache_tokens cache_creation_tokens cache_creation_tokens_5m cache_creation_tokens_1h

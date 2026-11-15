@@ -298,6 +298,7 @@ const SENSITIVE_FORM_FIELDS = [
   'azure_responses_version',
   'force_format',
   'thinking_to_content',
+  'strip_copilot_metadata',
   'proxy',
   'http_protocol',
   'http2_connection_shards',
@@ -1894,6 +1895,32 @@ export function ChannelMutateDrawer({
                   if (confirmed) field.onChange(true)
                 })
               }}
+            />
+          </FormControl>
+        </FormItem>
+      )}
+    />
+  )
+
+  const copilotMetadataFields = (
+    <FormField
+      control={form.control}
+      name='strip_copilot_metadata'
+      render={({ field }) => (
+        <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+          <div className='min-w-0 space-y-0.5'>
+            <FormLabel className='text-sm break-words'>
+              {t('Strip Copilot response metadata')}
+            </FormLabel>
+            <FormDescription>
+              <code className='break-all'>strip_copilot_metadata</code>
+            </FormDescription>
+          </div>
+          <FormControl>
+            <Switch
+              disabled={sensitiveLocked || isSubmitting}
+              checked={field.value}
+              onCheckedChange={field.onChange}
             />
           </FormControl>
         </FormItem>
@@ -4756,6 +4783,7 @@ export function ChannelMutateDrawer({
                   disabled={sensitiveLocked || isSubmitting}
                 />
                 {formatFields}
+                {copilotMetadataFields}
                 {ollamaOpenAIChatFields}
                 {thinkingFields}
                 {currentType !== CHANNEL_TYPE_ADVANCED_CUSTOM &&

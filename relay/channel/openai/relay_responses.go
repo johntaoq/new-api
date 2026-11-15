@@ -40,7 +40,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	responseBody = rewriteSGLangResponsesCreatedAt(info, responseBody, "created_at", responsesResponse.CreatedAt)
 
 	// 写入新的 response body
-	service.IOCopyBytesGracefully(c, resp, responseBody)
+	service.IOCopyBytesGracefully(c, resp, relaycommon.FilterCopilotResponseMetadata(info, responseBody))
 
 	// compute usage
 	usage := &dto.Usage{}
@@ -89,7 +89,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if streamResponse.Response != nil {
 			data = string(rewriteSGLangResponsesCreatedAt(info, []byte(data), "response.created_at", streamResponse.Response.CreatedAt))
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+		sendResponsesStreamData(c, streamResponse, relaycommon.FilterCopilotResponseMetadataString(info, data))
 		accumulator.Observe(&streamResponse, common.StringToByteSlice(data))
 	})
 

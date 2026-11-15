@@ -39,7 +39,7 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 import { Home } from '..'
 
 const status = {
-  docs_link: 'https://doc.unikeyx.com',
+  docs_link: 'https://doc.99off.net',
   system_name: 'UniKeyX API',
   HeaderNavModules: JSON.stringify({
     home: true,
@@ -119,7 +119,7 @@ async function renderSite(path = '/') {
   )
 }
 
-it('production navigation includes the image studio, configured documentation and local About page', () => {
+it('production navigation hides the image studio and links to the 99Off documentation', () => {
   const client = siteClient()
   function Wrapper(props: { children: ReactNode }) {
     return (
@@ -129,14 +129,12 @@ it('production navigation includes the image studio, configured documentation an
     )
   }
   const { result } = renderHook(() => useTopNavLinks(), { wrapper: Wrapper })
-  expect(result.current).toContainEqual({
-    title: 'Professional image generation',
-    href: 'https://www.pic365.org/',
-    external: true,
-  })
+  expect(result.current).not.toContainEqual(
+    expect.objectContaining({ title: 'Professional image generation' })
+  )
   expect(result.current).toContainEqual({
     title: 'Docs',
-    href: 'https://doc.unikeyx.com',
+    href: 'https://doc.99off.net',
     external: true,
   })
   expect(result.current).toContainEqual({ title: 'About', href: '/about' })
@@ -160,7 +158,7 @@ it('the default home shows the production service content with local registratio
   )
   expect(
     home.getByRole('button', { name: 'View documentation' })
-  ).toHaveAttribute('href', 'https://doc.unikeyx.com')
+  ).toHaveAttribute('href', 'https://doc.99off.net')
   expect(home.getByRole('heading', { name: 'Original models' })).toBeVisible()
   expect(home.getByRole('heading', { name: 'Reliable service' })).toBeVisible()
   expect(home.getByRole('heading', { name: 'Long-term access' })).toBeVisible()

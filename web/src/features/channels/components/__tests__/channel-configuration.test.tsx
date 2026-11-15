@@ -1581,6 +1581,76 @@ test('configuration from fields unsupported by the selected provider stays unmar
   ).not.toBeInTheDocument()
 })
 
+test.each([1, 14])(
+  'provider %s displays the saved Copilot cleanup switch and persists turning it off across reopening',
+  async (type) => {
+    editingChannel = {
+      ...editingChannel,
+      type,
+      settings: '{"strip_copilot_metadata":true,"custom_option":7}',
+    }
+    const put = vi
+      .spyOn(api, 'put')
+      .mockImplementation(async (_url, payload) => {
+        editingChannel = {
+          ...editingChannel,
+          settings: (payload as { settings: string }).settings,
+        }
+        return { data: { success: true } }
+      })
+    const user = userEvent.setup()
+    const view = render(<ConfigurationHarness currentRow={editingChannel} />)
+    await screen.findByDisplayValue('Existing channel')
+    const requestTab = screen.getByRole('tab', { name: /Request & Response/ })
+    expect(requestTab).toHaveAccessibleName(/Configured/)
+    await user.click(requestTab)
+    const toggle = screen.getByRole('switch', {
+      name: 'Strip Copilot response metadata',
+    })
+    expect(toggle).toBeChecked()
+    expect(screen.getByText('strip_copilot_metadata')).toBeVisible()
+    await user.click(toggle)
+    expect(toggle).not.toBeChecked()
+    expect(requestTab).not.toHaveAccessibleName(/Configured/)
+    await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+    await waitFor(() => expect(put).toHaveBeenCalled())
+    expect(JSON.parse(editingChannel.settings)).toMatchObject({
+      strip_copilot_metadata: false,
+      custom_option: 7,
+    })
+
+    view.unmount()
+    client.clear()
+    render(<ConfigurationHarness currentRow={editingChannel} />)
+    await screen.findByDisplayValue('Existing channel')
+    await user.click(screen.getByRole('tab', { name: /Request & Response/ }))
+    expect(
+      screen.getByRole('switch', { name: 'Strip Copilot response metadata' })
+    ).not.toBeChecked()
+  }
+)
+
+test('the Copilot cleanup switch on a legacy channel can be enabled by keyboard and saved', async () => {
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  await user.click(screen.getByRole('tab', { name: /Request & Response/ }))
+  const toggle = screen.getByRole('switch', {
+    name: 'Strip Copilot response metadata',
+  })
+  expect(toggle).not.toBeChecked()
+  toggle.focus()
+  await user.keyboard(' ')
+  expect(toggle).toBeChecked()
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  await waitFor(() => expect(put).toHaveBeenCalled())
+  const payload = put.mock.calls[0]?.[1] as { settings: string }
+  expect(JSON.parse(payload.settings).strip_copilot_metadata).toBe(true)
+})
+
 test('an Ollama channel marks a saved OpenAI-compatible chat setting in Request & Response and saves the toggled value', async () => {
   editingChannel = {
     ...editingChannel,
@@ -2037,6 +2107,12 @@ test('an operator without sensitive write permission can discover saved models a
   expect(thinking).toHaveAttribute('aria-disabled', 'true')
   await user.click(thinking)
   expect(thinking).not.toBeChecked()
+  const copilotCleanup = screen.getByRole('switch', {
+    name: 'Strip Copilot response metadata',
+  })
+  expect(copilotCleanup).toHaveAttribute('aria-disabled', 'true')
+  await user.click(copilotCleanup)
+  expect(copilotCleanup).not.toBeChecked()
   await user.click(screen.getByRole('tab', { name: /Other Settings/ }))
   expect(screen.getByLabelText('Proxy Address')).toBeDisabled()
   await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))

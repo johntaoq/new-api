@@ -483,6 +483,12 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 			return
 		}
 
+		if err := service.ValidatePic365Request(c, token); err != nil {
+			common.ApiErrorStatus(c, http.StatusUnauthorized, err)
+			c.Abort()
+			return
+		}
+
 		// TokenAuthReadOnly must keep allowing other token states to query read-only
 		// data, such as token usage logs; only explicitly disabled tokens are denied.
 		if token.Status == common.TokenStatusDisabled {
@@ -673,6 +679,10 @@ func apiKeyFromWebSocketSubprotocol(protocols string) (string, bool) {
 func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) error {
 	if token == nil {
 		return fmt.Errorf("token is nil")
+	}
+	if err := service.ValidatePic365Request(c, token); err != nil {
+		abortWithOpenAiMessage(c, http.StatusForbidden, err.Error(), types.ErrorCodeAccessDenied)
+		return err
 	}
 	c.Set("id", token.UserId)
 	c.Set("token_id", token.Id)

@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Pic365 storage": "Pic365 storage",
+    "Peak storage": "Peak storage",
+    "Pic365 storage fee: {{month}}, CNY {{amount}}, invoice {{invoice}}": "Pic365 storage fee: {{month}}, CNY {{amount}}, invoice {{invoice}}",
+    "Pic365": "Pic365",
+    "Pic365 Image Generation": "Pic365 Image Generation",
+    "Pic365 pop-up was blocked": "Pic365 pop-up was blocked",
+    "Opening Pic365": "Opening Pic365",
+    "Pic365 authorization is unavailable": "Pic365 authorization is unavailable",
     "System adjustment": "System adjustment",
     "Current month details": "Current month details",
     "Not finalized": "Not finalized",
@@ -5954,6 +5962,7 @@
     "Streaming": "Streaming",
     "String Replace": "String Replace",
     "Strip {{affix}}": "Strip {{affix}}",
+    "Strip Copilot response metadata": "Strip Copilot response metadata",
     "Strip prefix": "Strip prefix",
     "Strip suffix": "Strip suffix",
     "Stripe": "Stripe",

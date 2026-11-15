@@ -101,6 +101,68 @@ func TestFinanceTopupCurrencySnapshot(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestFinanceTopupOneYuanMinimum(t *testing.T) {
+	oldRate, oldQuota, oldMin := operation_setting.USDExchangeRate, common.QuotaPerUnit, operation_setting.MinTopUp
+	oldDiscount := operation_setting.GetPaymentSetting().AmountDiscount
+	t.Cleanup(func() {
+		operation_setting.USDExchangeRate, common.QuotaPerUnit, operation_setting.MinTopUp = oldRate, oldQuota, oldMin
+		operation_setting.GetPaymentSetting().AmountDiscount = oldDiscount
+	})
+	common.QuotaPerUnit = 500000
+	operation_setting.GetPaymentSetting().AmountDiscount = map[int]float64{}
+	for _, tc := range []struct {
+		name     string
+		minimum  int
+		amount   int64
+		currency string
+		rate     float64
+		money    float64
+		quota    int64
+		wantErr  bool
+	}{
+		{name: "one yuan is accepted", minimum: 1, amount: 1, currency: "CNY", rate: 7, money: 1, quota: 71428},
+		{name: "one dollar retains exchange conversion", minimum: 1, amount: 1, currency: "USD", rate: 7, money: 7, quota: 500000},
+		{name: "unset minimum falls back to one yuan", minimum: 0, amount: 1, currency: "CNY", rate: 7, money: 1, quota: 71428},
+		{name: "below one yuan after conversion is rejected", minimum: 1, amount: 1, currency: "USD", rate: 0.5, wantErr: true},
+		{name: "higher configured minimum is respected", minimum: 5, amount: 1, currency: "CNY", rate: 7, wantErr: true},
+		{name: "zero amount is rejected", minimum: 1, amount: 0, currency: "CNY", rate: 7, wantErr: true},
+		{name: "negative amount is rejected", minimum: 1, amount: -1, currency: "CNY", rate: 7, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			operation_setting.MinTopUp, operation_setting.USDExchangeRate = tc.minimum, tc.rate
+			order, err := calculateFinanceTopup(tc.amount, tc.currency, "default")
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.money, order.Money)
+			assert.Equal(t, tc.quota, order.Quota)
+		})
+	}
+}
+
+func TestTopUpInfoReportsOneYuanMinimum(t *testing.T) {
+	oldMin := operation_setting.MinTopUp
+	t.Cleanup(func() { operation_setting.MinTopUp = oldMin })
+	gin.SetMode(gin.TestMode)
+	for _, minimum := range []int{0, 1, 5} {
+		operation_setting.MinTopUp = minimum
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		GetTopUpInfo(ctx)
+		var response struct {
+			Success bool `json:"success"`
+			Data    struct {
+				MinimumCNY int `json:"min_topup_cny"`
+			} `json:"data"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		require.True(t, response.Success)
+		assert.Equal(t, max(1, minimum), response.Data.MinimumCNY)
+	}
+}
+
 func TestValidateTopUpQuotaReturnsMaximumAmount(t *testing.T) {
 	oldQuotaPerUnit := common.QuotaPerUnit
 	oldDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType

@@ -48,10 +48,11 @@ func invalidateTokenCacheForMutation(key string) error {
 }
 
 // cacheInitToken publishes a database snapshot only when no mutation fence is
-// active and the hash is cold. An existing hash only gets its TTL refreshed:
+// active and the hash is cold. An existing hash gets delegation metadata and
+// its TTL refreshed:
 // its RemainQuota may already be ahead of this snapshot because atomic
 // pre-consume decrements Redis first, so a snapshot must never overwrite any
-// field of a live hash.
+// quota field of a live hash.
 // 返回值：0=被 fence 拦截，1=完成初始化，2=哈希已存在，仅刷新 TTL。
 func cacheInitToken(token Token) (int, error) {
 	if !common.RedisEnabled {
@@ -66,7 +67,8 @@ if redis.call('EXISTS', KEYS[2]) == 1 then
   return 0
 end
 if redis.call('EXISTS', KEYS[1]) == 1 then
-  redis.call('EXPIRE', KEYS[1], ARGV[18])
+  redis.call('HSET', KEYS[1], 'DelegatedClient', ARGV[18])
+  redis.call('EXPIRE', KEYS[1], ARGV[19])
   return 2
 end
 redis.call('HSET', KEYS[1],
@@ -75,8 +77,8 @@ redis.call('HSET', KEYS[1],
   'UnlimitedQuota', ARGV[8], 'ModelLimitsEnabled', ARGV[9], 'ModelLimits', ARGV[10],
   'AllowIps', ARGV[11], 'Group', ARGV[12], 'CrossGroupRetry', ARGV[13],
   'AutoGroups', ARGV[14], 'RemainQuota', ARGV[15], 'UsedQuota', ARGV[16],
-  'AllowUserQuotaQuery', ARGV[17])
-redis.call('EXPIRE', KEYS[1], ARGV[18])
+  'AllowUserQuotaQuery', ARGV[17], 'DelegatedClient', ARGV[18])
+redis.call('EXPIRE', KEYS[1], ARGV[19])
 return 1`
 
 	return common.RDB.Eval(context.Background(), script, []string{
@@ -88,6 +90,7 @@ return 1`
 		token.ModelLimits, allowIps, token.Group, strconv.FormatBool(token.CrossGroupRetry),
 		token.AutoGroups, token.RemainQuota, token.UsedQuota,
 		strconv.FormatBool(token.AllowUserQuotaQuery),
+		token.DelegatedClient,
 		tokenCacheTTLSeconds(),
 	).Int()
 }
@@ -97,12 +100,19 @@ func cacheGetTokenByKey(key string) (*Token, error) {
 	if !common.RedisEnabled {
 		return nil, fmt.Errorf("redis is not enabled")
 	}
-	var token Token
+	// A sentinel distinguishes an absent marker from an ordinary key's empty
+	// marker in the same HGETALL snapshot, without a second-read race.
+	token := Token{DelegatedClient: "\x00"}
 	if err := common.RedisHGetObj(getTokenCacheKey(key), &token); err != nil {
 		return nil, err
 	}
 	if token.Id <= 0 {
 		return nil, fmt.Errorf("token cache is incomplete")
+	}
+	// Older hashes lack this security marker. Reload metadata from the database
+	// without replacing quota fields that may already reflect in-flight usage.
+	if token.DelegatedClient == "\x00" {
+		return nil, fmt.Errorf("token cache delegation metadata is incomplete")
 	}
 	token.Key = key
 	return &token, nil

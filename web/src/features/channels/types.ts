@@ -95,6 +95,7 @@ export interface ChannelSettings {
 }
 
 export interface ChannelOtherSettings {
+  strip_copilot_metadata?: boolean
   azure_responses_version?: string
   vertex_key_type?: 'json' | 'api_key'
   vertex_project_id?: string

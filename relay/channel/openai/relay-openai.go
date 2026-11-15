@@ -26,7 +26,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	}
 
 	if !forceFormat && !thinkToContent {
-		return helper.StringData(c, data)
+		return helper.StringData(c, relaycommon.FilterCopilotResponseMetadataString(info, data))
 	}
 
 	var lastStreamResponse dto.ChatCompletionsStreamResponse
@@ -365,7 +365,7 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		responseBody = geminiRespStr
 	}
 
-	service.IOCopyBytesGracefully(c, resp, responseBody)
+	service.IOCopyBytesGracefully(c, resp, relaycommon.FilterCopilotResponseMetadata(info, responseBody))
 
 	return &simpleResponse.Usage, nil
 }

@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Pic365 storage": "Stockage Pic365",
+    "Peak storage": "Pic de stockage",
+    "Pic365 storage fee: {{month}}, CNY {{amount}}, invoice {{invoice}}": "Frais de stockage Pic365 : {{month}}, CNY {{amount}}, facture {{invoice}}",
+    "Pic365": "Pic365",
+    "Pic365 Image Generation": "Génération d'images Pic365",
+    "Pic365 pop-up was blocked": "Autorisez les fenêtres contextuelles pour ouvrir Pic365",
+    "Opening Pic365": "Ouverture de Pic365",
+    "Pic365 authorization is unavailable": "Autorisation Pic365 indisponible",
     "System adjustment": "Correction système",
     "Current month details": "Détail du mois en cours",
     "Not finalized": "Non clôturé",
@@ -5954,6 +5962,7 @@
     "Streaming": "Streaming",
     "String Replace": "Remplacement de texte",
     "Strip {{affix}}": "Supprimer {{affix}}",
+    "Strip Copilot response metadata": "Supprimer les métadonnées de réponse Copilot",
     "Strip prefix": "Supprimer le préfixe",
     "Strip suffix": "Supprimer le suffixe",
     "Stripe": "Stripe",

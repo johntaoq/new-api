@@ -72,6 +72,34 @@ async function chineseTranslator() {
 }
 
 describe('usage log CSV export', () => {
+  test('storage exports its snapshot cost and receipt without fake inference metrics', async () => {
+    const t = await chineseTranslator()
+    const storage: UsageLog = {
+      ...consumeLog,
+      model_name: 'pic365-storage',
+      channel: 0,
+      channel_name: '',
+      token_id: 0,
+      token_name: '',
+      group: '',
+      quota: 5000,
+      request_id: 'storage-invoice-0001',
+      other: JSON.stringify({
+        billing_category: 'pic365_storage',
+        storage_invoice: { quota_per_usd: 100000 },
+        content_parts: [{ key: 'Pic365 receipt {{invoice}}', params: { invoice: 'storage-invoice-0001' } }],
+      }),
+    }
+    const header = getLogCsvHeader(true, t)
+    const row = getLogCsvRow(storage, true, t)
+    expect(row[header.indexOf(t('Model'))]).toBe('Pic365 storage')
+    expect(row[header.indexOf(t('Channel'))]).toBe('')
+    expect(row[header.indexOf(t('Cost'))]).toBe('$0.05')
+    for (const key of ['Stream', 'Input Tokens', 'Output Tokens', 'Cache Read', 'Cache Write', 'Duration']) {
+      expect(row[header.indexOf(t(key))]).toBe('')
+    }
+    expect(row[header.indexOf(t('Details'))]).toContain('storage-invoice-0001')
+  })
   test('header in the user view has no user or channel column', async () => {
     const t = await chineseTranslator()
 

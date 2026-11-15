@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Pic365 storage": "Lưu trữ Pic365",
+    "Peak storage": "Dung lượng cao nhất",
+    "Pic365 storage fee: {{month}}, CNY {{amount}}, invoice {{invoice}}": "Phí lưu trữ Pic365: {{month}}, CNY {{amount}}, hóa đơn {{invoice}}",
+    "Pic365": "Pic365",
+    "Pic365 Image Generation": "Tạo ảnh Pic365",
+    "Pic365 pop-up was blocked": "Vui lòng cho phép cửa sổ bật lên để mở Pic365",
+    "Opening Pic365": "Đang mở Pic365",
+    "Pic365 authorization is unavailable": "Không thể xác thực Pic365",
     "System adjustment": "Điều chỉnh hệ thống",
     "Current month details": "Chi tiết tháng hiện tại",
     "Not finalized": "Chưa chốt hóa đơn",
@@ -5954,6 +5962,7 @@
     "Streaming": "Truyền liên tục",
     "String Replace": "Thay thế chuỗi",
     "Strip {{affix}}": "Bỏ {{affix}}",
+    "Strip Copilot response metadata": "Xóa siêu dữ liệu Copilot khỏi phản hồi",
     "Strip prefix": "Bỏ tiền tố",
     "Strip suffix": "Bỏ hậu tố",
     "Stripe": "Stripe",

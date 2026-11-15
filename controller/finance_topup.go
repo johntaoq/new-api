@@ -38,8 +38,8 @@ func calculateFinanceTopup(amount int64, currency, group string) (model.TopUp, e
 			cny = decimal.NewFromInt(amount)
 			baseUSD = cny.Div(decimal.NewFromFloat(rate))
 		}
-		if cny.LessThan(decimal.NewFromInt(int64(max(10, operation_setting.MinTopUp)))) {
-			return order, common.NewMessage("Top-up amount cannot be less than {{min}} CNY", map[string]any{"min": max(10, operation_setting.MinTopUp)})
+		if cny.LessThan(decimal.NewFromInt(int64(max(1, operation_setting.MinTopUp)))) {
+			return order, common.NewMessage("Top-up amount cannot be less than {{min}} CNY", map[string]any{"min": max(1, operation_setting.MinTopUp)})
 		}
 		quota, err = common.WalletQuotaFromDecimalStrict(baseUSD.Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Floor())
 		ratio := common.GetTopupGroupRatio(group)

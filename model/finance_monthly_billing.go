@@ -289,6 +289,9 @@ func financeMonthlySourceItems(month FinanceBillingMonth, userID int) ([]Custome
 	}
 	legacyLogs := make([]*Log, 0)
 	for _, log := range logs {
+		if log.ModelName == Pic365StorageModel {
+			continue
+		}
 		kind := ChannelCostEntryTypeConsume
 		if log.Type == LogTypeRefund {
 			kind = ChannelCostEntryTypeRefund
@@ -777,6 +780,9 @@ func financeBillCSV(bill FinanceMonthlyBill, items []FinanceMonthlyBillItem, int
 			section := "资金流水"
 			if financeBillItemSection(item) == 1 {
 				section = "API消费明细"
+			}
+			if item.BillingSource == Pic365StorageCategory {
+				section = "Pic365存储消耗"
 			}
 			bucket := financeStatementBucketLabel(item.BucketType)
 			amount := item.AmountCNY

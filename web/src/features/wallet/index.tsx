@@ -169,7 +169,7 @@ export function Wallet(props: WalletProps) {
   const minimum =
     regularPayment && topupInfo?.enable_online_topup
       ? Math.ceil(
-          (topupInfo.min_topup_cny ?? 10) /
+          (topupInfo.min_topup_cny ?? 1) /
             (inputCurrency === 'USD' ? topupInfo.recharge_rate || 1 : 1)
         )
       : getMinTopupAmount(topupInfo)
@@ -217,7 +217,7 @@ export function Wallet(props: WalletProps) {
         !isWaffoPancakePayment(method.type)
       const minTopup = methodIsRegular
         ? Math.ceil(
-            (topupInfo?.min_topup_cny ?? 10) /
+            (topupInfo?.min_topup_cny ?? 1) /
               (topupCurrency === 'USD' ? topupInfo?.recharge_rate || 1 : 1)
           )
         : method.min_topup || getMinTopupAmount(topupInfo)
