@@ -23,6 +23,8 @@ type UserBalanceLedger struct {
 	EntryType                   string  `json:"entry_type" gorm:"type:varchar(16);index"`
 	Direction                   string  `json:"direction" gorm:"type:varchar(16);index"`
 	AmountQuota                 int     `json:"amount_quota"`
+	PaidQuota                   int     `json:"paid_quota" gorm:"default:0"`
+	GiftQuota                   int     `json:"gift_quota" gorm:"default:0"`
 	AmountUSD                   float64 `json:"amount_usd" gorm:"default:0"`
 	QuotaPerUnitSnapshot        float64 `json:"quota_per_unit_snapshot" gorm:"default:0"`
 	CurrencyDisplayTypeSnapshot string  `json:"currency_display_type_snapshot" gorm:"type:varchar(16);default:''"`
@@ -45,6 +47,8 @@ type RecordUserBalanceLedgerParams struct {
 	BucketType               string
 	EntryType                string
 	AmountQuota              int
+	PaidQuota                int
+	GiftQuota                int
 	AmountUSD                float64
 	QuotaPerUnitSnapshot     float64
 	SourceType               string
@@ -71,6 +75,9 @@ type UserQuotaAdjustmentParams struct {
 }
 
 func normalizeUserBalanceBucketType(bucketType string) string {
+	if strings.TrimSpace(bucketType) == "mixed" {
+		return "mixed"
+	}
 	if strings.TrimSpace(bucketType) == QuotaFundingTypePaid {
 		return QuotaFundingTypePaid
 	}
@@ -79,6 +86,8 @@ func normalizeUserBalanceBucketType(bucketType string) string {
 
 func normalizeUserBalanceEntryType(entryType string, bucketType string) string {
 	switch strings.TrimSpace(entryType) {
+	case CustomerMonthlyStatementEntryTypeConsume:
+		return CustomerMonthlyStatementEntryTypeConsume
 	case CustomerMonthlyStatementEntryTypeTopup:
 		return CustomerMonthlyStatementEntryTypeTopup
 	case CustomerMonthlyStatementEntryTypeGift:
@@ -131,6 +140,9 @@ func createUserBalanceLedgerTx(tx *gorm.DB, params RecordUserBalanceLedgerParams
 	if params.AmountQuota == 0 {
 		return nil
 	}
+	if params.BucketType == "mixed" && (params.PaidQuota > 0 || params.GiftQuota > 0 || params.PaidQuota+params.GiftQuota != params.AmountQuota) {
+		return errors.New("invalid mixed debit allocation")
+	}
 
 	params, snapshot := normalizeUserBalanceLedgerParams(params)
 	if params.AmountQuota > 0 && params.AmountUSD < 0 {
@@ -149,6 +161,8 @@ func createUserBalanceLedgerTx(tx *gorm.DB, params RecordUserBalanceLedgerParams
 		EntryType:                   params.EntryType,
 		Direction:                   normalizeUserBalanceDirection(params.AmountQuota),
 		AmountQuota:                 params.AmountQuota,
+		PaidQuota:                   params.PaidQuota,
+		GiftQuota:                   params.GiftQuota,
 		AmountUSD:                   params.AmountUSD,
 		QuotaPerUnitSnapshot:        params.QuotaPerUnitSnapshot,
 		CurrencyDisplayTypeSnapshot: snapshot.DisplayType,

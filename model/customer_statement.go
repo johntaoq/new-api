@@ -628,8 +628,14 @@ func buildCustomerMonthlyStatementItems(
 		}
 		paidQuotaRaw := 0
 		giftQuotaRaw := 0
+		operationType := financeSourceLabel(ledger.SourceType)
+		if ledger.SourceType == Pic365StorageCategory {
+			operationType = Pic365StorageCategory
+		}
 		if ledger.BucketType == QuotaFundingTypePaid {
 			paidQuotaRaw = ledger.AmountQuota
+		} else if ledger.BucketType == "mixed" {
+			paidQuotaRaw, giftQuotaRaw = ledger.PaidQuota, ledger.GiftQuota
 		} else {
 			giftQuotaRaw = ledger.AmountQuota
 		}
@@ -640,7 +646,7 @@ func buildCustomerMonthlyStatementItems(
 			UsernameSnapshot:            statement.UsernameSnapshot,
 			OccurredAt:                  ledger.OccurredAt,
 			EntryType:                   entryType,
-			OperationType:               financeSourceLabel(ledger.SourceType),
+			OperationType:               operationType,
 			TokenId:                     0,
 			TokenNameSnapshot:           "",
 			TokenMasked:                 "",
@@ -672,6 +678,9 @@ func buildCustomerMonthlyStatementItems(
 	}
 
 	for _, logRecord := range legacyLogs {
+		if logRecord.ModelName == Pic365StorageModel {
+			continue
+		}
 		entryType := convertLogTypeToStatementEntryType(logRecord.Type)
 		if entryType == "" {
 			continue

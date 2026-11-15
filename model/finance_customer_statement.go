@@ -138,7 +138,7 @@ func financeBuildUserUsageFromStatementItems(items []CustomerMonthlyStatementIte
 			row = &financeUserUsageAggregate{UserID: item.UserId}
 			result[item.UserId] = row
 		}
-		if item.EntryType == CustomerMonthlyStatementEntryTypeConsume {
+		if item.EntryType == CustomerMonthlyStatementEntryTypeConsume && item.OperationType != Pic365StorageCategory {
 			row.ConsumeCount++
 		}
 		row.ConsumePlatform -= item.QuotaRaw
@@ -162,7 +162,7 @@ func loadFinanceUserUsageFromStatementItems(statementIDs []int) (map[int]*financ
 	err := DB.Model(&CustomerMonthlyStatementItem{}).
 		Select(`
 			user_id,
-			SUM(CASE WHEN entry_type = ? THEN 1 ELSE 0 END) AS consume_count,
+			SUM(CASE WHEN entry_type = ? AND operation_type <> 'pic365_storage' THEN 1 ELSE 0 END) AS consume_count,
 			-SUM(quota_raw) AS consume_platform,
 			-SUM(paid_quota_raw) AS paid_consume_platform,
 			-SUM(gift_quota_raw) AS gift_consume_platform,

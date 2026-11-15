@@ -78,6 +78,17 @@ beforeEach(async () => {
     if (url === '/api/notice') {
       return { data: { success: true, data: '' } }
     }
+    if (url === '/api/user/self/pic365') {
+      return {
+        data: {
+          success: true,
+          data: {
+            enabled: true,
+            start_url: 'https://www.pic365.org/api/auth/newapi40/start',
+          },
+        },
+      }
+    }
     throw new Error(`Unexpected site request: ${url}`)
   })
 })
@@ -130,9 +141,10 @@ it('production navigation includes the image studio, configured documentation an
   }
   const { result } = renderHook(() => useTopNavLinks(), { wrapper: Wrapper })
   expect(result.current).toContainEqual({
-    title: 'Professional image generation',
+    title: 'Pic365',
     href: 'https://www.pic365.org/',
     external: true,
+    pic365: true,
   })
   expect(result.current).toContainEqual({
     title: 'Docs',
@@ -187,6 +199,20 @@ it('an authenticated visitor gets console entries instead of registration', asyn
   expect(
     screen.queryByRole('button', { name: 'Register account' })
   ).not.toBeInTheDocument()
+})
+
+it('an authenticated visitor has one authorized Pic365 action in the former image studio position', async () => {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'local-user', role: 1 })
+  await renderSite()
+  const navigation = document.querySelector('[data-slot="public-header-navigation"]')
+  expect(navigation).not.toBeNull()
+  const action = await within(navigation as HTMLElement).findByRole('button', {
+    name: 'Pic365',
+  })
+  expect(action.previousElementSibling).toHaveTextContent('Model Square')
+  expect(action.nextElementSibling).toHaveTextContent('Docs')
+  expect(within(navigation as HTMLElement).queryByRole('link', { name: 'Pic365' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Professional image generation')).not.toBeInTheDocument()
 })
 
 it('the mobile menu reports its open state and restores scrolling when closed', async () => {

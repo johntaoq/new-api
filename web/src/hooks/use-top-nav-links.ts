@@ -29,6 +29,7 @@ export type TopNavLink = {
   disabled?: boolean
   requiresAuth?: boolean
   external?: boolean
+  pic365?: boolean
 }
 
 /**
@@ -87,9 +88,10 @@ export function useTopNavLinks(): TopNavLink[] {
   }
 
   links.push({
-    title: t('Professional image generation'),
+    title: t('Pic365'),
     href: 'https://www.pic365.org/',
     external: true,
+    pic365: true,
   })
 
   // Docs (supports external links)

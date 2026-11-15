@@ -97,6 +97,22 @@ function renderLogs(props: Parameters<typeof Fixture>[0] = {}) {
   )
 }
 
+it('storage summaries retain money and hide model-call timing and channels on mobile', () => {
+  renderLogs({ logs: [{
+    ...log, model_name: 'pic365-storage', channel: 0, channel_name: '', quota: 5000,
+    prompt_tokens: 0, completion_tokens: 0, use_time: 0, summary: true,
+    other: JSON.stringify({ billing_category: 'pic365_storage', storage_invoice: {
+      invoice_id: 'storage-invoice-0001', billing_month: '2026-11', peak_bytes: 2**30,
+      unit_price_cents_per_gib: 300, amount_cents: 300, quota_per_usd: 100000,
+      cny_per_usd: 7, balance_before: 100000, balance_after: 95000,
+    } }),
+  }] })
+  expect(screen.getByRole('button', { name: 'Model: Pic365 storage' })).toBeVisible()
+  expect(screen.getByText('$0.05')).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Channel: #0' })).not.toBeInTheDocument()
+  expect(screen.queryByText('0.0s')).not.toBeInTheDocument()
+})
+
 it('shows model mismatch evidence when tapping the mobile model badge', async () => {
   const user = userEvent.setup()
   renderLogs({

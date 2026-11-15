@@ -69,6 +69,11 @@ export function useSidebarData(): SidebarData {
             icon: FlaskConical,
           },
           {
+            title: t('Pic365 Image Generation'),
+            type: 'pic365',
+            url: '/pic365',
+          },
+          {
             title: t('Chat'),
             icon: MessageSquare,
             type: 'chat-presets',

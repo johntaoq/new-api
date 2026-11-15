@@ -6,6 +6,7 @@ import dayjs from '@/lib/dayjs'
 import type { StatementUnit } from './types'
 
 const labels: Record<string, string> = {
+  pic365_storage: 'Pic365 storage',
   consume: 'Consumption',
   refund: 'Refund',
   topup: 'Top-up',

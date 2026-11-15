@@ -57,6 +57,7 @@ import { LOG_TYPE_ALL_VALUE } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
   formatModelName,
+  isPic365StorageLog,
   decodeBillingExprB64,
   getTieredBillingSummary,
   hasAnyCacheTokens,
@@ -118,6 +119,13 @@ function buildDetailSegments(
   language: string,
   usageSchema?: BillingUsageSchema
 ): DetailSegment[] {
+  if (isPic365StorageLog(log)) {
+    const invoice = other?.storage_invoice
+    return invoice ? [{ text: t('Pic365 storage') }, {
+      text: `${invoice.billing_month} · ${(invoice.peak_bytes / 2 ** 30).toFixed(3)} GiB · CNY ${(invoice.amount_cents / 100).toFixed(2)} · ${invoice.invoice_id}`,
+      muted: true,
+    }] : []
+  }
   const segments = buildTypeDetailSegments(log, other, t, language, usageSchema)
   const adminSegments: DetailSegment[] = []
   // Quota saturation is a rare, admin-only anomaly marker; surface it first
@@ -396,7 +404,7 @@ export function useCommonLogsColumns(
             } = useUsageLogsContext()
             const log = row.original
 
-            if (!isDisplayableLogType(log.type)) return null
+            if (!isDisplayableLogType(log.type) || isPic365StorageLog(log)) return null
 
             const other = parseUsageLogOther(log)
             const affinity = other?.admin_info?.channel_affinity
@@ -681,7 +689,7 @@ export function useCommonLogsColumns(
           return (
             <div className='flex w-fit flex-col gap-0.5'>
               <ModelBadge
-                modelName={modelInfo.name}
+                modelName={isPic365StorageLog(log) ? t(modelInfo.name) : modelInfo.name}
                 actualModel={modelInfo.actualModel}
                 responseModel={modelInfo.responseModel}
               />
@@ -695,7 +703,7 @@ export function useCommonLogsColumns(
         header: t('Stream'),
         cell: ({ row }) => {
           const log = row.original
-          if (!isTimingLogType(log.type)) return null
+          if (!isTimingLogType(log.type) || isPic365StorageLog(log)) return null
 
           const useTime = row.getValue('use_time') as number
           const other = parseUsageLogOther(log)
@@ -721,7 +729,7 @@ export function useCommonLogsColumns(
         header: t('Tokens', { context: 'usage' }),
         cell: ({ row }) => {
           const log = row.original
-          if (!isDisplayableLogType(log.type)) return null
+          if (!isDisplayableLogType(log.type) || isPic365StorageLog(log)) return null
 
           const other = parseUsageLogOther(log)
 
@@ -787,7 +795,7 @@ export function useCommonLogsColumns(
         header: t('Timing'),
         cell: ({ row }) => {
           const log = row.original
-          if (!isTimingLogType(log.type)) return null
+          if (!isTimingLogType(log.type) || isPic365StorageLog(log)) return null
 
           const useTime = row.getValue('use_time') as number
           const other = parseUsageLogOther(log)

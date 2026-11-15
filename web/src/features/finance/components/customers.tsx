@@ -152,6 +152,7 @@ export function FinanceCustomers(props: {
             columns={[
               { key: 'occurred_at', label: 'Time', kind: 'date' },
               { key: 'entry_type', label: 'Type', kind: 'label' },
+              { key: 'billing_source', label: 'Billing Source', kind: 'label' },
               { key: 'token_display', label: 'Token' },
               { key: 'model_name', label: 'Model' },
               {
@@ -162,6 +163,7 @@ export function FinanceCustomers(props: {
                 kind: 'money',
               },
               { key: 'request_id', label: 'Request ID' },
+              { key: 'remark', label: 'Remark' },
             ]}
           />
         )}

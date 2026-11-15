@@ -29,11 +29,13 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import dayjs from '@/lib/dayjs'
-import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
+import { formatTimestampToDate } from '@/lib/format'
 
 import type { UsageLog } from '../data/schema'
 import {
   formatModelName,
+  formatUsageLogQuota,
+  isPic365StorageLog,
   logTokenName,
   parseUsageLogOther,
 } from '../lib/format'
@@ -72,7 +74,8 @@ export function CommonLogMobileCard<TData>(props: {
   const log = props.log
   const other = parseUsageLogOther(log)
   const displayable = isDisplayableLogType(log.type)
-  const timing = isTimingLogType(log.type)
+  const storage = isPic365StorageLog(log)
+  const timing = isTimingLogType(log.type) && !storage
   const model = formatModelName(log)
   const config = getLogTypeConfig(log.type)
   const group = log.group || other?.group || ''
@@ -83,12 +86,12 @@ export function CommonLogMobileCard<TData>(props: {
   const fields: Record<FieldName, LogField> = {
     model: {
       label: t('Model'),
-      value: model.name,
+      value: storage ? t(model.name) : model.name,
       visible: displayable && props.cells.has('model_name') && !!model.name,
     },
     cost: {
       label: t('Cost'),
-      value: formatLogQuota(log.quota),
+      value: formatUsageLogQuota(log.quota, other),
       visible: displayable && props.cells.has('quota'),
     },
     time: {
@@ -105,7 +108,7 @@ export function CommonLogMobileCard<TData>(props: {
     channel: {
       label: t('Channel'),
       value: [log.channel_name, `#${log.channel}`].filter(Boolean).join(' '),
-      visible: displayable && props.cells.has('channel'),
+      visible: displayable && !storage && props.cells.has('channel'),
       sensitive: true,
     },
     token: {
@@ -151,7 +154,7 @@ export function CommonLogMobileCard<TData>(props: {
         {fields.model.visible && (
           <div className='min-w-0 flex-[1_1_10rem]'>
             <ModelBadge
-              modelName={model.name}
+              modelName={storage ? t(model.name) : model.name}
               actualModel={model.actualModel}
               responseModel={model.responseModel}
               wrapText

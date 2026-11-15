@@ -46,6 +46,7 @@ import {
   SidebarMenuSubItem,
   useSidebar,
 } from '@/components/ui/sidebar'
+import { Pic365Launch } from '@/features/pic365'
 
 import { checkIsActive } from '../lib/url-utils'
 import type {
@@ -72,6 +73,10 @@ export function NavGroup({ title, items }: NavGroupProps) {
       <SidebarMenu>
         {items.map((item) => {
           const key = `${item.title}-${item.url || item.type}`
+
+          if (item.type === 'pic365') {
+            return <Pic365Launch key={key} presentation='sidebar' />
+          }
 
           // Special handling: dynamic chat presets list
           if (item.type === 'chat-presets') {

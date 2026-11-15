@@ -27,6 +27,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Pic365Launch } from '@/features/pic365'
 import { SystemUpdateAction } from '@/features/system-update/system-update-action'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useSystemConfig } from '@/hooks/use-system-config'
@@ -249,6 +250,15 @@ export function PublicHeader(props: PublicHeaderProps) {
             >
               {links.map((link) => {
                 const isActive = pathname === link.href
+                if (link.pic365 && isAuthenticated) {
+                  return (
+                    <Pic365Launch
+                      key={`${link.title}:${link.href}`}
+                      presentation='navigation'
+                      className='text-muted-foreground hover:text-foreground px-3'
+                    />
+                  )
+                }
                 if (link.external) {
                   return (
                     <a
@@ -387,6 +397,16 @@ export function PublicHeader(props: PublicHeaderProps) {
               )
               const transitionStyle = {
                 transitionDelay: mobileOpen ? `${100 + i * 50}ms` : '0ms',
+              }
+              if (link.pic365 && isAuthenticated) {
+                return (
+                  <Pic365Launch
+                    key={`${link.title}:${link.href}`}
+                    presentation='navigation'
+                    className={linkClassName}
+                    onClick={() => setMobileOpen(false)}
+                  />
+                )
               }
               if (link.external) {
                 return (

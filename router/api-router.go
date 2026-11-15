@@ -59,6 +59,14 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/telegram/bind/:flow_token", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.TelegramLegacyAuth)
 		// Standard OAuth providers (GitHub, Discord, OIDC, LinuxDO, Telegram) - unified route
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
+		apiRouter.POST("/pic365/token", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.ExchangePic365Code)
+		apiRouter.POST("/pic365/renew", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.RenewPic365Authorization)
+		apiRouter.GET("/pic365/balance", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TokenAuthReadOnly(), controller.GetPic365Balance)
+		apiRouter.POST("/pic365/storage/authorize", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, middleware.TokenAuthReadOnly(), controller.AuthorizePic365Storage)
+		apiRouter.GET("/pic365/storage/capabilities", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetPic365StorageCapabilities)
+		apiRouter.POST("/pic365/storage/charge", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.ChargePic365Storage)
+		apiRouter.POST("/pic365/storage/status", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.GetPic365StorageStatus)
+		apiRouter.POST("/pic365/storage/revoke", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.RevokePic365Storage)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
@@ -98,6 +106,8 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/sessions/revoke-others", middleware.DisableCache(), controller.RevokeOtherLoginSessions)
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self", controller.GetSelf)
+				selfRoute.GET("/self/pic365", controller.GetPic365Entry)
+				selfRoute.POST("/self/pic365/authorize", middleware.CriticalRateLimit(), middleware.UserCriticalRateLimit("pic365"), anonymousRequestBodyLimit, controller.AuthorizePic365)
 				selfRoute.GET("/models", controller.GetUserModels)
 				selfRoute.PUT("/self", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateSelf)
 				selfRoute.DELETE("/self", middleware.DisableCache(), controller.DeleteSelf)

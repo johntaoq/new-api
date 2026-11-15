@@ -40,6 +40,12 @@ function renderCost(
 }
 
 describe('log cost display', () => {
+  test('storage uses the receipt quota conversion snapshot, not current model pricing', () => {
+    renderCost({quota:5000,other:{billing_category:'pic365_storage',storage_invoice:{invoice_id:'storage-invoice-0001',billing_month:'2026-11',
+      peak_bytes:2**30,unit_price_cents_per_gib:300,amount_cents:300,quota_per_usd:100000,cny_per_usd:7,balance_before:100000,balance_after:95000}}})
+    expect(screen.getByText('$0.05')).toBeVisible()
+    expect(screen.queryByText('$0.01')).not.toBeInTheDocument()
+  })
   beforeAll(() => {
     i18next.addResourceBundle('en', 'translation', {
       Subscription: 'Subscription',

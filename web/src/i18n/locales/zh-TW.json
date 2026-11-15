@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Pic365 storage": "Pic365 儲存",
+    "Peak storage": "峰值容量",
+    "Pic365 storage fee: {{month}}, CNY {{amount}}, invoice {{invoice}}": "Pic365 儲存費：{{month}}，人民幣 {{amount}} 元，帳單 {{invoice}}",
+    "Pic365": "Pic365",
+    "Pic365 Image Generation": "Pic365生圖",
+    "Pic365 pop-up was blocked": "瀏覽器封鎖了 Pic365，請允許彈出視窗後重試",
+    "Opening Pic365": "正在進入 Pic365",
+    "Pic365 authorization is unavailable": "Pic365 授權失敗，請從控制台重新進入",
     "System adjustment": "系統修正",
     "Current month details": "本月明細",
     "Not finalized": "尚未出帳",

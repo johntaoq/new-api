@@ -50,7 +50,10 @@ export function PerformanceHealthPanel() {
   })
 
   const models = useMemo(
-    () => metricsQuery.data?.data.models ?? [],
+    () =>
+      (metricsQuery.data?.data.models ?? []).filter(
+        (model) => model.model_name !== 'gpt-image-1.5'
+      ),
     [metricsQuery.data]
   )
 

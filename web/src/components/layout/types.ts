@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type LinkProps } from '@tanstack/react-router'
-import { type TFunction } from 'i18next'
+import type { LinkProps } from '@tanstack/react-router'
+import type { TFunction } from 'i18next'
 
 /**
  * Base navigation item type
@@ -63,10 +63,16 @@ export type NavChatPresets = BaseNavItem & {
   items?: never
 }
 
+export type NavPic365 = BaseNavItem & {
+  type: 'pic365'
+  url: '/pic365'
+  items?: never
+}
+
 /**
  * Navigation item union type
  */
-export type NavItem = NavCollapsible | NavLink | NavChatPresets
+export type NavItem = NavCollapsible | NavLink | NavChatPresets | NavPic365
 
 /**
  * Navigation group type - a group of navigation items in sidebar
@@ -97,6 +103,7 @@ export type TopNavLink = {
   disabled?: boolean
   requiresAuth?: boolean
   external?: boolean
+  pic365?: boolean
 }
 
 /**

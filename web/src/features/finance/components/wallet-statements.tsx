@@ -63,6 +63,7 @@ export function WalletMonthlyStatements() {
                 unit='cny'
                 columns={[
                   { key: 'entry_type', label: 'Type', kind: 'label' },
+                  { key: 'billing_source', label: 'Billing Source', kind: 'label' },
                   {
                     key: 'amount_cny',
                     cnyKey: 'amount_cny',
@@ -73,6 +74,7 @@ export function WalletMonthlyStatements() {
                   { key: 'token_display', label: 'Token' },
                   { key: 'model_name', label: 'Model' },
                   { key: 'request_id', label: 'Request ID' },
+                  { key: 'remark', label: 'Remark' },
                 ]}
               />
             </TabsContent>

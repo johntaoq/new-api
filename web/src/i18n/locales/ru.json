@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Pic365 storage": "Хранилище Pic365",
+    "Peak storage": "Пиковый объём хранения",
+    "Pic365 storage fee: {{month}}, CNY {{amount}}, invoice {{invoice}}": "Хранение Pic365: {{month}}, CNY {{amount}}, счёт {{invoice}}",
+    "Pic365": "Pic365",
+    "Pic365 Image Generation": "Генерация изображений Pic365",
+    "Pic365 pop-up was blocked": "Разрешите всплывающие окна, чтобы открыть Pic365",
+    "Opening Pic365": "Открытие Pic365",
+    "Pic365 authorization is unavailable": "Авторизация Pic365 недоступна",
     "System adjustment": "Системная корректировка",
     "Current month details": "Детализация текущего месяца",
     "Not finalized": "Счёт не сформирован",

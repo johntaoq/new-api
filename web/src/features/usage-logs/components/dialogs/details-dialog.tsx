@@ -485,7 +485,8 @@ export function DetailsDialog(props: DetailsDialogProps) {
 
   const isViolation = isViolationFeeLog(other)
   const isRefund = props.log.type === 6
-  const isConsume = props.log.type === 2
+  const storage = other?.billing_category === 'pic365_storage' ? other.storage_invoice : null
+  const isConsume = props.log.type === 2 && !storage
   const isTopup = props.log.type === 1
   const isManage = props.log.type === 3
   const isSubscription = other?.billing_source === 'subscription'
@@ -502,7 +503,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
     other?.admin_info?.task_plugin?.key
   )
   const hasAudioTokens = other?.ws || other?.audio
-  const showTiming = isTimingLogType(props.log.type)
+  const showTiming = isTimingLogType(props.log.type) && !storage
   const showAdminIp =
     !!props.log.ip && (showTiming || (props.isAdmin && isTopup))
   const adminInfo = other?.admin_info
@@ -1166,11 +1167,20 @@ export function DetailsDialog(props: DetailsDialogProps) {
           )}
 
         {/* Token breakdown (for consume/error types with token data) */}
-        {isDisplayableType(props.log.type) && other && (
+        {isDisplayableType(props.log.type) && other && !storage && (
           <TokenBreakdown log={props.log} other={other} />
         )}
 
         {/* Billing breakdown (consume type) */}
+        {storage && (
+          <DetailSection label={t('Pic365 storage')}>
+            <DetailRow label={t('Month')} value={storage.billing_month} />
+            <DetailRow label={t('Peak storage')} value={`${(storage.peak_bytes / 2 ** 30).toFixed(3)} GiB`} />
+            <DetailRow label={t('Price')} value={`CNY ${(storage.unit_price_cents_per_gib / 100).toFixed(2)}/GiB`} />
+            <DetailRow label={t('Cost')} value={`CNY ${(storage.amount_cents / 100).toFixed(2)}`} />
+            <DetailRow label={t('Request ID')} value={storage.invoice_id} mono />
+          </DetailSection>
+        )}
         {isConsume && other && !isViolation && (
           <BillingBreakdown
             log={props.log}

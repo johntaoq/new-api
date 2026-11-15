@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Pic365 storage": "Pic365 ストレージ",
+    "Peak storage": "最大保存容量",
+    "Pic365 storage fee: {{month}}, CNY {{amount}}, invoice {{invoice}}": "Pic365 ストレージ料金: {{month}}、CNY {{amount}}、請求番号 {{invoice}}",
+    "Pic365": "Pic365",
+    "Pic365 Image Generation": "Pic365画像生成",
+    "Pic365 pop-up was blocked": "Pic365を開くにはポップアップを許可してください",
+    "Opening Pic365": "Pic365 を開いています",
+    "Pic365 authorization is unavailable": "Pic365 の認証を利用できません",
     "System adjustment": "システム修正",
     "Current month details": "今月の明細",
     "Not finalized": "未確定",

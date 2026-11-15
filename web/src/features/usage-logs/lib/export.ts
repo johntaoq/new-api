@@ -16,10 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
+import { formatTimestampToDate } from '@/lib/format'
 
 import type { UsageLog } from '../data/schema'
-import { logTokenName, parseLogOther, renderLogContent } from './format'
+import { logTokenName, parseLogOther, renderLogContent, formatUsageLogQuota, isPic365StorageLog } from './format'
 import {
   getLogTypeConfig,
   isDisplayableLogType,
@@ -62,6 +62,7 @@ export function getLogCsvRow(
 ): string[] {
   const other = parseLogOther(log.other ?? '')
   const usage = isDisplayableLogType(log.type)
+  const storage = isPic365StorageLog(log)
   const cacheWrite =
     (other?.cache_creation_tokens_5m ?? 0) +
       (other?.cache_creation_tokens_1h ?? 0) ||
@@ -79,15 +80,15 @@ export function getLogCsvRow(
     ...(isAdmin ? [log.username ?? ''] : []),
     logTokenName(log, t),
     log.group ?? '',
-    log.model_name ?? '',
+    storage ? t('Pic365 storage') : log.model_name ?? '',
     ...(isAdmin ? [channel] : []),
-    usage ? t(log.is_stream ? 'Yes' : 'No') : '',
-    usage ? String(log.prompt_tokens ?? 0) : '',
-    usage ? String(log.completion_tokens ?? 0) : '',
-    usage ? String(other?.cache_tokens ?? 0) : '',
-    usage ? String(cacheWrite) : '',
-    usage ? formatLogQuota(log.quota ?? 0) : '',
-    isTimingLogType(log.type) ? `${log.use_time ?? 0}s` : '',
+    usage && !storage ? t(log.is_stream ? 'Yes' : 'No') : '',
+    usage && !storage ? String(log.prompt_tokens ?? 0) : '',
+    usage && !storage ? String(log.completion_tokens ?? 0) : '',
+    usage && !storage ? String(other?.cache_tokens ?? 0) : '',
+    usage && !storage ? String(cacheWrite) : '',
+    usage ? formatUsageLogQuota(log.quota ?? 0, other) : '',
+    isTimingLogType(log.type) && !storage ? `${log.use_time ?? 0}s` : '',
     log.ip ?? '',
     log.request_id ?? '',
     renderLogContent(other, t) ?? log.content ?? '',
